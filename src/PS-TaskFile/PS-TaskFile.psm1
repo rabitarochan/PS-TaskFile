@@ -6,10 +6,8 @@ function Import-TasksFromYaml {
         [string]$Path
     )
 
-    if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
-    }
-    Import-Module powershell-yaml
+    # Ensure the required module is imported
+    Import-Module powershell-yaml -ErrorAction Stop
 
     if (-not (Test-Path $Path)) {
         Write-Error "Task file not found: $Path"

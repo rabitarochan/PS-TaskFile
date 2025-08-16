@@ -16,7 +16,7 @@ A PowerShell task runner that uses YAML-based task definitions, similar to Taskf
 
 ### Prerequisites
 
-The module requires the `powershell-yaml` module, which will be automatically installed if not present.
+The module requires the `powershell-yaml` module, which will be automatically installed when you install PS-TaskFile from PowerShell Gallery.
 
 ### Install from Source
 
@@ -392,10 +392,10 @@ Import-Module "$PWD/src/PS-TaskFile/PS-TaskFile.psd1" -Force
 
 ### powershell-yaml not installed
 
-The module will attempt to install `powershell-yaml` automatically. If this fails:
+When installing PS-TaskFile from PowerShell Gallery, the `powershell-yaml` dependency will be automatically installed. If you're using the module from source and the dependency is missing:
 
 ```powershell
-# Install manually
+# Install the dependency manually
 Install-Module -Name powershell-yaml -Force -Scope CurrentUser
 ```
 

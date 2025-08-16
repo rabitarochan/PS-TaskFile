@@ -108,7 +108,7 @@
             # RequireLicenseAcceptance = $false
 
             # External dependent modules of this module
-            # ExternalModuleDependencies = @()
+            ExternalModuleDependencies = @('powershell-yaml')
 
         } # End of PSData hashtable
 
