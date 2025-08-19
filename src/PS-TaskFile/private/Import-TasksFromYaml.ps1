@@ -20,10 +20,10 @@ function Import-TasksFromYaml {
         foreach ($key in $yamlObject.vars.Keys) {
             $value = $yamlObject.vars[$key]
             if ($value -is [hashtable] -and $value.ContainsKey("cmd")) {
-                # 動的な値（コマンドの実行）
+                # Dynamic value (command execution)
                 $variables[$key] = Invoke-Expression $value.cmd
             } else {
-                # 静的な値
+                # Static value
                 $variables[$key] = $value
             }
         }
@@ -44,7 +44,7 @@ function Import-TasksFromYaml {
             Dir = $taskDef.dir
         }
     }
-    
+
     return @{
         Tasks = $tasks
         Variables = $variables

@@ -29,7 +29,7 @@ function Invoke-TaskFile {
     $tasks = $importedData.Tasks
     $variables = $importedData.Variables
 
-    # コマンドライン引数で指定された変数を処理
+    # Process variables specified by command line arguments
     foreach ($varArg in $Var) {
         if ($varArg -match '^(.+?)=(.*)$') {
             $key = $matches[1]
