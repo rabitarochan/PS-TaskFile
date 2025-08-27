@@ -64,7 +64,13 @@ function Invoke-TaskFile {
                     Write-Verbose "Execution order: $($executionOrder -join ' -> ')"
                 }
                 foreach ($task in $executionOrder) {
-                    Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive
+                    try {
+                        Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile $File
+                    }
+                    catch {
+                        Write-Error "Task execution failed for task '$task': $($_.Exception.Message)"
+                        throw $_
+                    }
                 }
             }
         }
@@ -78,7 +84,13 @@ function Invoke-TaskFile {
             }
             $executedTasks = @{}
             foreach ($task in $executionOrder) {
-                Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive
+                try {
+                    Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile $File
+                }
+                catch {
+                    Write-Error "Task execution failed for task '$task': $($_.Exception.Message)"
+                    throw $_
+                }
             }
         } else {
             Write-Host "No task specified and no 'default' task found." -ForegroundColor Red

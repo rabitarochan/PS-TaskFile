@@ -153,5 +153,64 @@ tasks:
             $outputString = $output -join "`n"
             $outputString | Should -Match "Failed to import tasks"
         }
+
+        It "Should output detailed error information and stop execution when command fails" {
+            $yamlContent = @"
+tasks:
+  failing-task:
+    desc: Task that fails
+    cmds:
+      - echo Starting...
+      - cmd /c 'exit 1'
+      - echo This should not run
+"@
+            $testFile = Join-Path $tempDir "error-details-test.yaml"
+            Set-Content -Path $testFile -Value $yamlContent
+            
+            # Execute and capture all output including error details
+            { Invoke-TaskFile -File $testFile -TaskNames @('failing-task') } | Should -Throw
+            
+            # The error should contain detailed information about the failed command
+            try {
+                Invoke-TaskFile -File $testFile -TaskNames @('failing-task')
+            } catch {
+                $_.Exception.Message | Should -Match "Command failed"
+                $_.Exception.Message | Should -Match "exit code"
+            }
+        }
+
+        It "Should not execute subsequent commands when a command fails" {
+            $yamlContent = @"
+tasks:
+  multi-cmd-task:
+    desc: Task with multiple commands where one fails
+    cmds:
+      - echo Command 1
+      - cmd /c 'exit 2'  
+      - echo Command 3 - should not execute
+"@
+            $testFile = Join-Path $tempDir "stop-on-error-test.yaml"
+            Set-Content -Path $testFile -Value $yamlContent
+            
+            # Mock to track which commands are executed and simulate failure
+            $script:executedCommands = @()
+            Mock Invoke-Expression -ModuleName PS-TaskFile -MockWith { 
+                param($Command)
+                $script:executedCommands += $Command
+                if ($Command -match "exit 2") {
+                    $global:LASTEXITCODE = 2
+                    # Simulate a command failure like the real implementation does
+                    return
+                }
+                $global:LASTEXITCODE = 0
+            }
+            
+            { Invoke-TaskFile -File $testFile -TaskNames @('multi-cmd-task') } | Should -Throw
+            
+            # Only the first two commands should have been executed (not the third)
+            $script:executedCommands.Count | Should -Be 2
+            $script:executedCommands[0] | Should -Match "Command 1"
+            $script:executedCommands[1] | Should -Match "exit 2"
+        }
     }
 }

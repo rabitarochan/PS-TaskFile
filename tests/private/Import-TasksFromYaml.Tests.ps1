@@ -3,10 +3,10 @@ Describe "Import-TasksFromYaml" {
         $modulePath = "$PSScriptRoot/../../src/PS-TaskFile"
         Import-Module $modulePath -Force
         Import-Module powershell-yaml -Force
-        
+
         # Get the module
         $script:module = Get-Module PS-TaskFile
-        
+
         # Create temp directory for test files
         $script:tempDir = New-Item -ItemType Directory -Path (Join-Path $TestDrive "taskfiles")
     }
@@ -26,9 +26,9 @@ tasks:
 "@
             $testFile = Join-Path $tempDir "simple.yaml"
             Set-Content -Path $testFile -Value $yamlContent
-            
+
             $result = & $module { Import-TasksFromYaml -Path $args[0] } $testFile
-            
+
             $result | Should -Not -BeNullOrEmpty
             $result.Tasks | Should -Not -BeNullOrEmpty
             $result.Tasks.Count | Should -Be 2
@@ -49,9 +49,9 @@ tasks:
 "@
             $testFile = Join-Path $tempDir "with-vars.yaml"
             Set-Content -Path $testFile -Value $yamlContent
-            
+
             $result = & $module { Import-TasksFromYaml -Path $args[0] } $testFile
-            
+
             $result.Variables['name'] | Should -Be 'TestProject'
             $result.Variables['version'] | Should -Be '1.0.0'
         }
@@ -72,9 +72,9 @@ tasks:
 "@
             $testFile = Join-Path $tempDir "with-deps.yaml"
             Set-Content -Path $testFile -Value $yamlContent
-            
+
             $result = & $module { Import-TasksFromYaml -Path $args[0] } $testFile
-            
+
             $result.Tasks['build'].DependsOn | Should -Contain 'clean'
         }
 
@@ -89,9 +89,9 @@ tasks:
 "@
             $testFile = Join-Path $tempDir "with-dir.yaml"
             Set-Content -Path $testFile -Value $yamlContent
-            
+
             $result = & $module { Import-TasksFromYaml -Path $args[0] } $testFile
-            
+
             $result.Tasks['build'].Dir | Should -Be './src'
         }
     }
@@ -99,9 +99,9 @@ tasks:
     Context "When importing invalid YAML file" {
         It "Should return null for non-existent file" {
             $testFile = Join-Path $tempDir "nonexistent.yaml"
-            
+
             $result = & $module { Import-TasksFromYaml -Path $args[0] -ErrorAction SilentlyContinue } $testFile
-            
+
             $result | Should -BeNullOrEmpty
         }
 
@@ -112,9 +112,9 @@ vars:
 "@
             $testFile = Join-Path $tempDir "no-tasks.yaml"
             Set-Content -Path $testFile -Value $yamlContent
-            
+
             $result = & $module { Import-TasksFromYaml -Path $args[0] -ErrorAction SilentlyContinue } $testFile
-            
+
             $result | Should -BeNullOrEmpty
         }
     }
