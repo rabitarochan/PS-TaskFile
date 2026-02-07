@@ -151,6 +151,11 @@ Error: $errorMsg
                             Write-Host $fullErrorMessage -ForegroundColor Red
                         }
                         
+                        # Set exit code for PowerShell errors (external commands already set $LASTEXITCODE)
+                        if ($global:LASTEXITCODE -eq 0) {
+                            $global:LASTEXITCODE = 1
+                        }
+
                         # Mark task as failed and stop processing
                         $taskFailed = $true
                         break

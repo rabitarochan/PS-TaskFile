@@ -66,7 +66,12 @@ function Invoke-TaskFile {
                 foreach ($task in $executionOrder) {
                     $result = Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile $File
                     if ($result -eq $false) {
-                        throw "Task execution failed for task '$task'"
+                        $PSCmdlet.ThrowTerminatingError([System.Management.Automation.ErrorRecord]::new(
+                            [System.Exception]::new("Task execution failed for task '$task'"),
+                            'TaskExecutionFailed',
+                            [System.Management.Automation.ErrorCategory]::InvalidResult,
+                            $task
+                        ))
                     }
                 }
             }
@@ -83,7 +88,12 @@ function Invoke-TaskFile {
             foreach ($task in $executionOrder) {
                 $result = Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile $File
                 if ($result -eq $false) {
-                    throw "Task execution failed for task '$task'"
+                    $PSCmdlet.ThrowTerminatingError([System.Management.Automation.ErrorRecord]::new(
+                        [System.Exception]::new("Task execution failed for task '$task'"),
+                        'TaskExecutionFailed',
+                        [System.Management.Automation.ErrorCategory]::InvalidResult,
+                        $task
+                    ))
                 }
             }
         } else {

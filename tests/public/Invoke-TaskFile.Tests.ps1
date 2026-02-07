@@ -148,10 +148,14 @@ tasks:
         }
 
         It "Should handle missing task file gracefully" {
-            $output = Invoke-TaskFile -File "nonexistent.yaml" 2>&1 6>&1
-
-            $outputString = $output -join "`n"
-            $outputString | Should -Match "Failed to import tasks"
+            $threw = $false
+            try {
+                Invoke-TaskFile -File "nonexistent.yaml" -ErrorAction Stop
+            } catch {
+                $threw = $true
+                $_.Exception.Message | Should -Match "Task file not found"
+            }
+            $threw | Should -BeTrue
         }
 
         It "Should output detailed error information and stop execution when command fails" {
@@ -168,7 +172,7 @@ tasks:
             Set-Content -Path $testFile -Value $yamlContent
 
             # Execute and capture all output including error details
-            { Invoke-TaskFile -File $testFile -TaskNames @('failing-task') } | Should -Throw -ErrorId "*Task execution failed*"
+            { Invoke-TaskFile -File $testFile -TaskNames @('failing-task') } | Should -Throw -ExpectedMessage "*Task execution failed*"
         }
 
         It "Should not execute subsequent commands when a command fails" {
