@@ -103,6 +103,38 @@ Describe "Invoke-Task" {
         }
     }
 
+    Context "When cmds references the same task multiple times" {
+        It "Should execute the same task reference every time it appears in cmds" {
+            $tasks = @{
+                'a' = @{
+                    Cmds = @('echo A')
+                    DependsOn = $null
+                }
+                'b' = @{
+                    Cmds = @('echo B')
+                    DependsOn = $null
+                }
+                'main' = @{
+                    Cmds = @(
+                        @{ task = 'a' },
+                        @{ task = 'b' },
+                        @{ task = 'a' },
+                        @{ task = 'b' }
+                    )
+                    DependsOn = $null
+                }
+            }
+            $variables = @{}
+            $executedTasks = @{}
+
+            & $module { Invoke-Task -Name 'main' -Tasks $args[0] -Variables $args[1] -ExecutedTasks $args[2] } $tasks $variables $executedTasks
+
+            $executedTasks['main'] | Should -BeTrue
+            # echo A x2 + echo B x2 = 4 times
+            Should -Invoke Invoke-Expression -ModuleName PS-TaskFile -Times 4
+        }
+    }
+
     Context "When using DryRun mode" {
         It "Should not execute commands in DryRun mode" {
             $tasks = @{

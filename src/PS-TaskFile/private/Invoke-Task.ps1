@@ -8,10 +8,11 @@ function Invoke-Task {
         [switch]$DryRun,
         [switch]$Interactive,
         [string]$TaskFile,
-        [System.Collections.ArrayList]$CallStack = $null
+        [System.Collections.ArrayList]$CallStack = $null,
+        [switch]$SkipExecutedCheck
     )
 
-    if ($ExecutedTasks.ContainsKey($Name)) {
+    if (-not $SkipExecutedCheck -and $ExecutedTasks.ContainsKey($Name)) {
         return $true
     }
 
@@ -58,7 +59,7 @@ function Invoke-Task {
                 }
                 
                 # Recursively invoke task
-                $subResult = Invoke-Task -Name $cmd.task -Tasks $Tasks -Variables $Variables -ExecutedTasks $ExecutedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile:$TaskFile -CallStack:$CallStack
+                $subResult = Invoke-Task -Name $cmd.task -Tasks $Tasks -Variables $Variables -ExecutedTasks $ExecutedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile:$TaskFile -CallStack:$CallStack -SkipExecutedCheck
                 
                 # Check if sub-task failed
                 if ($subResult -eq $false) {
