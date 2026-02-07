@@ -1,0 +1,7 @@
+tasks:
+  default:
+    desc: Build
+    cmds:
+      - Write-Host "Start"
+      - Remove-Item -Path .\non-exsist-file.txt
+      - Write-Host "Finish"

@@ -1,0 +1,17 @@
+name: publish-psgallery
+on:
+  push:
+    tags: ['v*']
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: pwsh
+        run: ./build/build.ps1
+      - name: Publish to PSGallery
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: ./build/publish.ps1 -SkipBuild
