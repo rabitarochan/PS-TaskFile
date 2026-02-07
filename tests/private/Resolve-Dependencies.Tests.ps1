@@ -89,7 +89,7 @@ Describe "Resolve-Dependencies" {
             $result[2] | Should -Be 'build'
         }
 
-        It "Should handle task references in commands" {
+        It "Should not include task references in commands in execution order" {
             $tasks = @{
                 'subtask' = @{
                     Cmds = @('echo Subtask...')
@@ -104,11 +104,11 @@ Describe "Resolve-Dependencies" {
                     DependsOn = $null
                 }
             }
-            
+
             $result = & $module { Resolve-Dependencies -TaskName 'main' -Tasks $args[0] } $tasks
-            
-            $result | Should -Contain 'subtask'
-            $result | Should -Contain 'main'
+
+            $result | Should -HaveCount 1
+            $result[0] | Should -Be 'main'
         }
 
         It "Should not duplicate tasks in execution order" {

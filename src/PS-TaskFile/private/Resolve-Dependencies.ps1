@@ -23,12 +23,6 @@ function Resolve-Dependencies {
         }
     }
 
-    foreach ($cmd in $task.Cmds) {
-        if ($cmd -is [hashtable] -and $cmd.ContainsKey("task")) {
-            Resolve-Dependencies -TaskName $cmd.task -Tasks $Tasks -Visited $Visited -Sorted $Sorted | Out-Null
-        }
-    }
-
     if (-not $Sorted.Contains($TaskName)) {
         $Sorted.Add($TaskName)
     }
