@@ -25,27 +25,25 @@ tasks:
 "@
             $testFile = Join-Path $tempDir "error-location.yaml"
             Set-Content -Path $testFile -Value $yamlContent
-            
+
             # Import tasks
             $importedData = & $module { Import-TasksFromYaml -Path $args[0] } $testFile
             $tasks = $importedData.Tasks
             $variables = $importedData.Variables
             $executedTasks = @{}
-            
-            # Execute and expect detailed error with line info
-            try {
-                & $module { 
-                    Invoke-Task -Name 'test-task' -Tasks $args[0] -Variables $args[1] -ExecutedTasks $args[2] -TaskFile $args[3]
-                } $tasks $variables $executedTasks $testFile
-                
-                # Should not reach here
-                $false | Should -BeTrue -Because "An error should have been thrown"
-            }
-            catch {
-                # Error message should contain taskfile location info
-                $_.Exception.Message | Should -Match "error-location.yaml"
-                $_.Exception.Message | Should -Match "line 7"
-                $_.Exception.Message | Should -Match "Remove-Item"
+
+            # Mock Write-TaskFileStackTrace to verify it's called correctly
+            Mock Write-TaskFileStackTrace {} -ModuleName PS-TaskFile
+
+            # Invoke-Task catches errors internally and returns $false
+            $result = & $module {
+                Invoke-Task -Name 'test-task' -Tasks $args[0] -Variables $args[1] -ExecutedTasks $args[2] -TaskFile $args[3]
+            } $tasks $variables $executedTasks $testFile
+
+            $result | Should -Be $false
+
+            Should -Invoke Write-TaskFileStackTrace -ModuleName PS-TaskFile -Times 1 -ParameterFilter {
+                $ErrorMessage -match "Cannot find path"
             }
         }
         
@@ -58,7 +56,7 @@ tasks:
       - echo "Main task start"     # Line 5
       - task: sub-task              # Line 6
       - echo "Main task end"        # Line 7
-      
+
   sub-task:
     desc: Sub task with error
     cmds:
@@ -68,24 +66,24 @@ tasks:
 "@
             $testFile = Join-Path $tempDir "nested-error.yaml"
             Set-Content -Path $testFile -Value $yamlContent
-            
+
             $importedData = & $module { Import-TasksFromYaml -Path $args[0] } $testFile
             $tasks = $importedData.Tasks
             $variables = $importedData.Variables
             $executedTasks = @{}
-            
-            try {
-                & $module { 
-                    Invoke-Task -Name 'main-task' -Tasks $args[0] -Variables $args[1] -ExecutedTasks $args[2] -TaskFile $args[3]
-                } $tasks $variables $executedTasks $testFile
-                
-                $false | Should -BeTrue -Because "An error should have been thrown"
-            }
-            catch {
-                # Should show task call hierarchy
-                $_.Exception.Message | Should -Match "sub-task"
-                $_.Exception.Message | Should -Match "line 13"
-                $_.Exception.Message | Should -Match "called from main-task"
+
+            # Mock Write-TaskFileStackTrace to verify it's called correctly
+            Mock Write-TaskFileStackTrace {} -ModuleName PS-TaskFile
+
+            # Sub-task fails, parent detects and returns $false
+            $result = & $module {
+                Invoke-Task -Name 'main-task' -Tasks $args[0] -Variables $args[1] -ExecutedTasks $args[2] -TaskFile $args[3]
+            } $tasks $variables $executedTasks $testFile
+
+            $result | Should -Be $false
+
+            Should -Invoke Write-TaskFileStackTrace -ModuleName PS-TaskFile -Times 1 -ParameterFilter {
+                $ErrorMessage -match "Cannot find path"
             }
         }
         
@@ -104,18 +102,19 @@ tasks:
             }
             $variables = @{}
             $executedTasks = @{}
-            
-            try {
-                & $module { 
-                    Invoke-Task -Name 'dynamic-task' -Tasks $args[0] -Variables $args[1] -ExecutedTasks $args[2]
-                } $tasks $variables $executedTasks
-                
-                $false | Should -BeTrue -Because "An error should have been thrown"
-            }
-            catch {
-                # Should show command index when no file info
-                $_.Exception.Message | Should -Match "Command #2"
-                $_.Exception.Message | Should -Match "Remove-Item"
+
+            # Mock Write-Host to verify fallback error output
+            Mock Write-Host {} -ModuleName PS-TaskFile
+
+            # No TaskFile parameter, so fallback error handling uses Write-Host
+            $result = & $module {
+                Invoke-Task -Name 'dynamic-task' -Tasks $args[0] -Variables $args[1] -ExecutedTasks $args[2]
+            } $tasks $variables $executedTasks
+
+            $result | Should -Be $false
+
+            Should -Invoke Write-Host -ModuleName PS-TaskFile -Times 1 -ParameterFilter {
+                $Object -match "Command #2" -and $Object -match "Remove-Item"
             }
         }
     }

@@ -56,7 +56,7 @@ function Invoke-TaskFile {
         }
         if ($allTasksExist) {
             $executedTasks = @{}
-            foreach ($taskName in $TaskNames) {
+            :outloop foreach ($taskName in $TaskNames) {
                 $executionOrder = Resolve-Dependencies -TaskName $taskName -Tasks $tasks
                 if ($DryRun) {
                     Write-Host "Execution order for task '$taskName': $($executionOrder -join ' -> ')" -ForegroundColor Magenta
@@ -64,12 +64,9 @@ function Invoke-TaskFile {
                     Write-Verbose "Execution order: $($executionOrder -join ' -> ')"
                 }
                 foreach ($task in $executionOrder) {
-                    try {
-                        Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile $File
-                    }
-                    catch {
-                        Write-Error "Task execution failed for task '$task': $($_.Exception.Message)"
-                        throw $_
+                    $result = Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile $File
+                    if ($result -eq $false) {
+                        throw "Task execution failed for task '$task'"
                     }
                 }
             }
@@ -84,12 +81,9 @@ function Invoke-TaskFile {
             }
             $executedTasks = @{}
             foreach ($task in $executionOrder) {
-                try {
-                    Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile $File
-                }
-                catch {
-                    Write-Error "Task execution failed for task '$task': $($_.Exception.Message)"
-                    throw $_
+                $result = Invoke-Task -Name $task -Tasks $tasks -Variables $variables -ExecutedTasks $executedTasks -DryRun:$DryRun -Interactive:$Interactive -TaskFile $File
+                if ($result -eq $false) {
+                    throw "Task execution failed for task '$task'"
                 }
             }
         } else {
