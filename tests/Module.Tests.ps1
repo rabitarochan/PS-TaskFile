@@ -14,6 +14,20 @@ Describe 'PS-TaskFile module' {
         Get-Module PS-TaskFile | Should -Not -BeNullOrEmpty
     }
 
+    It 'points to its repository and license' {
+        $manifest = Test-ModuleManifest -Path $script:ManifestPath
+        "$($manifest.ProjectUri)" | Should -Be 'https://github.com/rabitarochan/PS-TaskFile'
+        "$($manifest.LicenseUri)" | Should -Be 'https://github.com/rabitarochan/PS-TaskFile/blob/main/LICENSE.txt'
+    }
+
+    # The license asks to be included in every copy: the package is built from the module
+    # directory, so the text has to be there as well as in the root of the repository.
+    It 'ships the license text with the module' {
+        $license = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' 'LICENSE.txt') -Raw
+        $license | Should -Match 'MIT License'
+        Get-Content -LiteralPath (Join-Path (Split-Path -Parent $script:ManifestPath) 'LICENSE.txt') -Raw | Should -Be $license
+    }
+
     # PowerShell cannot replace the classes of a loaded module: after an update the new classes
     # call old ones. A child process, because the state belongs to the process.
     It 'refuses to run once its files changed after it was loaded into the session' {

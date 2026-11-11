@@ -72,11 +72,17 @@ Created dist/app-1.2.3.zip
 ## Requirements and installation
 
 - PowerShell 7.4 or later
-- The [powershell-yaml](https://www.powershellgallery.com/packages/powershell-yaml) module
-  (`Install-Module powershell-yaml -Scope CurrentUser`)
+- The [powershell-yaml](https://www.powershellgallery.com/packages/powershell-yaml) module,
+  a dependency that is installed together with PS-TaskFile
 
-The module is not published to the PowerShell Gallery. Import it from a clone, or copy
-`src/PS-TaskFile` into a directory of `$env:PSModulePath`:
+Install the module from the PowerShell Gallery:
+
+```powershell
+Install-PSResource PS-TaskFile
+```
+
+To run it from a clone instead, install powershell-yaml yourself
+(`Install-PSResource powershell-yaml`) and import the manifest:
 
 ```powershell
 Import-Module ./src/PS-TaskFile/PS-TaskFile.psd1
@@ -343,3 +349,8 @@ The tests need Pester 5.5 or later. When the `task` binary is on the `PATH`,
 messages and exit codes; without it those tests are skipped.
 
 `AGENTS.md` describes the architecture and the conventions of the code base.
+
+## License
+
+[MIT](LICENSE.txt). PS-TaskFile is an independent project; it is not affiliated with
+[Task](https://taskfile.dev), whose Taskfile format it implements.

@@ -152,6 +152,20 @@ Work test-first: add or change a test, watch it fail, then change the code.
   (see "runs dependencies in parallel").
 - Tests create their Taskfiles under `$TestDrive` with `New-TestTaskfile`.
 
+## Releasing
+
+The module is published to the PowerShell Gallery from `src/PS-TaskFile`; the repository is
+`https://github.com/rabitarochan/PS-TaskFile`. Releases are made by the maintainer: do not
+publish, tag or push without being asked.
+
+1. Raise `ModuleVersion` in `src/PS-TaskFile/PS-TaskFile.psd1`. All tests must pass.
+2. `Publish-PSResource -Path src/PS-TaskFile -Repository PSGallery -ApiKey <key>`. A published
+   version cannot be removed or replaced, only hidden.
+3. Tag the released commit `vX.Y.Z` and push the tag.
+
+`LICENSE.txt` exists twice, in the root (for GitHub) and in `src/PS-TaskFile` (the package
+must contain it). The two copies have to stay identical; a test checks that.
+
 ## Conventions
 
 - Code, comments, help and commit messages are in English.
