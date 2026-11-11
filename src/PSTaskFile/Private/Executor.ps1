@@ -260,10 +260,21 @@ class TaskExecutor {
         return $call.Silent -or $cmdSilent -or $taskSilent -or $ctx.Options.Silent
     }
 
-    # Runs a condition script (status / precondition / if) with the environment of the task.
     hidden static [bool] Condition([hashtable] $ctx, [object] $task, [string] $text) {
+        return [TaskExecutor]::Condition($ctx, $task, $text, $null)
+    }
+
+    # Runs a condition script (status / precondition / if) with the environment and the
+    # variables of the task; $extra are the variables of one command (loop variables).
+    hidden static [bool] Condition([hashtable] $ctx, [object] $task, [string] $text, [IDictionary] $extra) {
+        $variables = $task.ScriptVars
+        if ($null -ne $extra -and $extra.get_Count() -gt 0) {
+            $variables = [OrderedDictionary]::new()
+            foreach ($key in $task.ScriptVars.get_Keys()) { $variables[[string]$key] = $task.ScriptVars[$key] }
+            foreach ($key in $extra.get_Keys()) { $variables[[string]$key] = $extra[$key] }
+        }
         [TaskEnv]::Enter($ctx.EnvGate, [TaskCompiler]::EnvOverrides($ctx, $task.Env), $ctx.Cancel.Token)
-        try { return [TaskScript]::Test($text, $task.Dir) }
+        try { return [TaskScript]::Test($text, $task.Dir, $variables) }
         finally { [TaskEnv]::Leave($ctx.EnvGate) }
     }
 
@@ -413,7 +424,7 @@ class TaskExecutor {
             [TaskLog]::Verbose($ctx, "task: [$name] $($cmd.Cmd) not for current platform - ignored")
             return
         }
-        if (-not [string]::IsNullOrEmpty($cmd.If) -and -not $ctx.Options.Dry -and -not [TaskExecutor]::Condition($ctx, $task, $cmd.If)) {
+        if (-not [string]::IsNullOrEmpty($cmd.If) -and -not $ctx.Options.Dry -and -not [TaskExecutor]::Condition($ctx, $task, $cmd.If, $cmd.ScriptVars)) {
             [TaskLog]::Verbose($ctx, "task: [$name] if condition not met - skipped")
             return
         }
@@ -422,6 +433,8 @@ class TaskExecutor {
         }
         if ($ctx.Options.Dry) { return }
 
+        # The loop variables of this iteration (or EXIT_CODE of a deferred command).
+        $null = [TaskScript]::SetVariables($scope, $cmd.ScriptVars)
         $result = [TaskExecutor]::RunScript($ctx, $task, $cmd, $scope)
         if ($result.ExitCode -eq 0) { return }
         if ($cmd.IgnoreError) {
@@ -470,7 +483,12 @@ class TaskExecutor {
             catch { [TaskLog]::Info($ctx, "task: cannot make directory `"$($task.Dir)`": $($_.Exception.Message)", 'Red') }
         }
 
+        # The variables become PowerShell variables once, when the scope is created: a command
+        # may reassign them for the commands that follow.
         $scope = [TaskScript]::NewScope()
+        foreach ($skipped in [TaskScript]::SetVariables($scope, $task.ScriptVars)) {
+            [TaskLog]::Verbose($ctx, "task: [$name] variable `"$skipped`" is reserved by PowerShell and is not available as `$$skipped")
+        }
         $deferred = [List[object]]::new()
         $exitCode = 0
         try {

@@ -15,6 +15,7 @@ function Watch-Task {
         Extra arguments made available to the Taskfile as {{.CLI_ARGS}} and {{.CLI_ARGS_LIST}}.
     .PARAMETER Variable
         Variables for the Taskfile: -Variable @{ CONFIG = 'Release' }
+        Tasks see them as {{.CONFIG}} and as the PowerShell variable $CONFIG.
     .PARAMETER Taskfile
         The Taskfile to run, or a directory that contains one.
     .PARAMETER Directory

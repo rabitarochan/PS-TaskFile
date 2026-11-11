@@ -23,6 +23,7 @@ function Invoke-Task {
         Everything after `--` is collected here: Invoke-Task test -- -Tag Unit
     .PARAMETER Variable
         Variables for the Taskfile (the `task NAME=value` syntax): -Variable @{ CONFIG = 'Release' }
+        Tasks see them as {{.CONFIG}} and as the PowerShell variable $CONFIG.
     .PARAMETER Taskfile
         The Taskfile to run, or a directory that contains one.
     .PARAMETER Directory

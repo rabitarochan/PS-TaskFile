@@ -120,14 +120,40 @@ class TaskCompiler {
         return $overrides
     }
 
-    # Runs a dynamic variable (`sh:`) as PowerShell and returns its output as a string.
-    static [string] HandleDynamicVar([hashtable] $ctx, [string] $text, [string] $directory, [IDictionary] $vars) {
-        $key = $directory + [char]0 + $text
+    # The variables that are also PowerShell variables of the code of a task: $declared holds
+    # their names (everything but the variables that come from the environment).
+    static [OrderedDictionary] ScriptVars([OrderedDictionary] $vars, [OrderedDictionary] $declared) {
+        $result = [OrderedDictionary]::new()
+        foreach ($key in $declared.get_Keys()) {
+            $name = [string]$key
+            if ($vars.Contains($name)) { $result[$name] = $vars[$name] }
+        }
+        return $result
+    }
+
+    # The values of the PowerShell variables $text refers to, as a cache key: the same command
+    # gives another result when such a variable has another value.
+    hidden static [string] ReferencedVars([string] $text, [IDictionary] $scriptVars) {
+        if ($null -eq $scriptVars -or $scriptVars.get_Count() -eq 0) { return '' }
+        $used = [OrderedDictionary]::new()
+        foreach ($name in [TaskScript]::VariableNames($text)) {
+            foreach ($key in $scriptVars.get_Keys()) {
+                if ([string]::Equals([string]$key, $name, [StringComparison]::OrdinalIgnoreCase)) { $used[[string]$key] = $scriptVars[$key] }
+            }
+        }
+        if ($used.get_Count() -eq 0) { return '' }
+        return [TplFn]::ToJson($used, $false, '', '')
+    }
+
+    # Runs a dynamic variable (`sh:`) as PowerShell and returns its output as a string. $vars
+    # are exported as environment variables, $scriptVars defined as PowerShell variables.
+    static [string] HandleDynamicVar([hashtable] $ctx, [string] $text, [string] $directory, [IDictionary] $vars, [IDictionary] $scriptVars) {
+        $key = $directory + [char]0 + $text + [char]0 + [TaskCompiler]::ReferencedVars($text, $scriptVars)
         $cached = $null
         if ($ctx.DynamicCache.TryGetValue($key, [ref] $cached)) { return [string]$cached }
         $result = $null
         [TaskEnv]::Enter($ctx.EnvGate, [TaskCompiler]::EnvOverrides($ctx, $vars), $ctx.Cancel.Token)
-        try { $result = [TaskScript]::Invoke($text, [TaskScript]::NewScope(), $directory, 'capture', $null) }
+        try { $result = [TaskScript]::Invoke($text, [TaskScript]::NewScope($scriptVars), $directory, 'capture', $null) }
         finally { [TaskEnv]::Leave($ctx.EnvGate) }
         if ($result.ExitCode -ne 0) {
             throw [TaskError]::Create("task: Command `"$text`" failed: $($result.Message)", [TaskError]::Unknown)
@@ -138,11 +164,13 @@ class TaskCompiler {
         return $value
     }
 
-    hidden static [void] Range([hashtable] $ctx, [OrderedDictionary] $result, [OrderedDictionary] $vars, [string] $directory, [bool] $evaluateSh) {
+    # Resolves $vars in order into $result. $declared ($null for `env:`) collects their names.
+    hidden static [void] Range([hashtable] $ctx, [OrderedDictionary] $result, [OrderedDictionary] $vars, [string] $directory, [bool] $evaluateSh, [OrderedDictionary] $declared) {
         if ($null -eq $vars) { return }
         foreach ($key in @($vars.get_Keys())) {
             $name = [string]$key
             $var = $vars[$key]
+            if ($null -ne $declared) { $declared[$name] = $true }
             $cache = [TaskCompiler]::NewCache($result)
             $value = $null
             $sh = ''
@@ -157,12 +185,20 @@ class TaskCompiler {
             [TaskCompiler]::ThrowIfError($cache)
             if ($var.Kind -ne 'sh') { $result[$name] = $value; continue }
             $varDirectory = if ([string]::IsNullOrEmpty($var.Dir)) { $directory } else { $var.Dir }
-            $result[$name] = [TaskCompiler]::HandleDynamicVar($ctx, $sh, $varDirectory, $result)
+            $scriptVars = $null
+            if ($null -ne $declared) { $scriptVars = [TaskCompiler]::ScriptVars($result, $declared) }
+            $result[$name] = [TaskCompiler]::HandleDynamicVar($ctx, $sh, $varDirectory, $result, $scriptVars)
         }
     }
 
     # All variables visible to $task for $call ($task and $call may be $null for global scope).
     static [OrderedDictionary] GetVariables([hashtable] $ctx, [object] $task, [object] $call, [bool] $evaluateSh) {
+        return [TaskCompiler]::GetVariables($ctx, $task, $call, $evaluateSh, [OrderedDictionary]::new())
+    }
+
+    # $declared receives the names of the variables that do not come from the environment (the
+    # OS environment and `env:`): those are the ones user code also sees as PowerShell variables.
+    static [OrderedDictionary] GetVariables([hashtable] $ctx, [object] $task, [object] $call, [bool] $evaluateSh, [OrderedDictionary] $declared) {
         $result = [OrderedDictionary]::new()
         $environment = [Environment]::GetEnvironmentVariables()
         foreach ($key in $environment.get_Keys()) { $result[[string]$key] = [string]$environment[$key] }
@@ -170,7 +206,10 @@ class TaskCompiler {
         $rootDir = [string]$ctx.Dir
         $taskDir = $rootDir
         $special = [TaskCompiler]::SpecialVars($ctx, $task, $call, '')
-        foreach ($key in $special.get_Keys()) { $result[[string]$key] = $special[$key] }
+        foreach ($key in $special.get_Keys()) {
+            $result[[string]$key] = $special[$key]
+            $declared[[string]$key] = $true
+        }
         if ($null -ne $task) {
             $cache = [TaskCompiler]::NewCache($result)
             $dir = [TaskCompiler]::Replace($cache, $task.Dir, $null)
@@ -179,15 +218,15 @@ class TaskCompiler {
             $result['TASK_DIR'] = $taskDir
         }
 
-        [TaskCompiler]::Range($ctx, $result, $ctx.Taskfile.Env, $rootDir, $evaluateSh)
-        [TaskCompiler]::Range($ctx, $result, $ctx.Taskfile.Vars, $rootDir, $evaluateSh)
+        [TaskCompiler]::Range($ctx, $result, $ctx.Taskfile.Env, $rootDir, $evaluateSh, $null)
+        [TaskCompiler]::Range($ctx, $result, $ctx.Taskfile.Vars, $rootDir, $evaluateSh, $declared)
         if ($null -ne $task) {
-            [TaskCompiler]::Range($ctx, $result, $task.IncludeVars, $rootDir, $evaluateSh)
-            [TaskCompiler]::Range($ctx, $result, $task.IncludedTaskfileVars, $taskDir, $evaluateSh)
+            [TaskCompiler]::Range($ctx, $result, $task.IncludeVars, $rootDir, $evaluateSh, $declared)
+            [TaskCompiler]::Range($ctx, $result, $task.IncludedTaskfileVars, $taskDir, $evaluateSh, $declared)
         }
         if ($null -eq $task -or $null -eq $call) { return $result }
-        [TaskCompiler]::Range($ctx, $result, $call.Vars, $rootDir, $evaluateSh)
-        [TaskCompiler]::Range($ctx, $result, $task.Vars, $taskDir, $evaluateSh)
+        [TaskCompiler]::Range($ctx, $result, $call.Vars, $rootDir, $evaluateSh, $declared)
+        [TaskCompiler]::Range($ctx, $result, $task.Vars, $taskDir, $evaluateSh, $declared)
         return $result
     }
 
@@ -262,17 +301,19 @@ class TaskCompiler {
     hidden static [object] CopyCmd([object] $cmd) {
         return [pscustomobject]@{
             Cmd = $cmd.Cmd; Task = $cmd.Task; Vars = $cmd.Vars; Silent = $cmd.Silent; IgnoreError = $cmd.IgnoreError; Defer = $cmd.Defer
-            Platforms = $cmd.Platforms; Set = $cmd.Set; Shopt = $cmd.Shopt; For = $null; If = $cmd.If
+            Platforms = $cmd.Platforms; Set = $cmd.Set; Shopt = $cmd.Shopt; For = $null; If = $cmd.If; ScriptVars = $null
         }
     }
 
-    # Templates one command. $extra carries loop variables (ITEM, KEY) or EXIT_CODE.
+    # Templates one command. $extra carries loop variables (ITEM, KEY) or EXIT_CODE; the
+    # command keeps it as ScriptVars, its own PowerShell variables.
     static [object] ReplaceCmd([hashtable] $cache, [object] $cmd, [IDictionary] $extra) {
         $new = [TaskCompiler]::CopyCmd($cmd)
         $new.Cmd = [TaskCompiler]::Replace($cache, $cmd.Cmd, $extra)
         $new.Task = [TaskCompiler]::Replace($cache, $cmd.Task, $extra)
         $new.If = [TaskCompiler]::Replace($cache, $cmd.If, $extra)
         $new.Vars = [TaskCompiler]::ReplaceVars($cache, $cmd.Vars, $extra)
+        $new.ScriptVars = $extra
         return $new
     }
 
@@ -294,7 +335,9 @@ class TaskCompiler {
     # Returns a copy of $task with every field templated for $call. With $evaluateSh = $false
     # dynamic variables are not executed (used for listing and for the pre-run checks).
     static [object] Compile([hashtable] $ctx, [object] $task, [object] $call, [bool] $evaluateSh) {
-        $vars = [TaskCompiler]::GetVariables($ctx, $task, $call, $evaluateSh)
+        $declared = [OrderedDictionary]::new()
+        $vars = [TaskCompiler]::GetVariables($ctx, $task, $call, $evaluateSh, $declared)
+        $scriptVars = [TaskCompiler]::ScriptVars($vars, $declared)
         $cache = [TaskCompiler]::NewCache($vars)
         $dir = [TaskPath]::SmartJoin([string]$ctx.Dir, [TaskPath]::ExpandHome([TaskCompiler]::Replace($cache, $task.Dir, $null)))
         $prefix = [TaskCompiler]::Replace($cache, $task.Prefix, $null)
@@ -313,6 +356,7 @@ class TaskCompiler {
             Set           = $task.Set
             Shopt         = $task.Shopt
             Vars          = $vars
+            ScriptVars    = $scriptVars
             Env           = [OrderedDictionary]::new()
             Dotenv        = [TaskCompiler]::ReplaceStrings($cache, $task.Dotenv)
             Silent        = $task.Silent
@@ -357,7 +401,7 @@ class TaskCompiler {
                 if ($evaluateSh) {
                     [TaskCompiler]::ThrowIfError($cache)
                     $varDirectory = if ([string]::IsNullOrEmpty($var.Dir)) { $dir } else { $var.Dir }
-                    $new.Env[[string]$key] = [TaskCompiler]::HandleDynamicVar($ctx, $var.Sh, $varDirectory, $new.Env)
+                    $new.Env[[string]$key] = [TaskCompiler]::HandleDynamicVar($ctx, $var.Sh, $varDirectory, $new.Env, $scriptVars)
                 }
                 else { $new.Env[[string]$key] = '' }
             }
@@ -402,6 +446,7 @@ class TaskCompiler {
                     $vars['TIMESTAMP'] = [TaskFingerprint]::Timestamp($new)
                 }
                 catch { $vars['CHECKSUM'] = '' }
+                foreach ($name in 'CHECKSUM', 'TIMESTAMP') { if ($vars.Contains($name)) { $scriptVars[$name] = $vars[$name] } }
             }
             $new.Status = [TaskCompiler]::ReplaceStrings($cache, $task.Status)
         }

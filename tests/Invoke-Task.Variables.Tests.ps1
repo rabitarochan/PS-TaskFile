@@ -355,3 +355,260 @@ tasks:
         (Invoke-TestTask $script:Dir needs -With @{ Variable = @{ NAME = 'n'; MODE = 'prod' } }).Lines | Should -Be @('n/prod')
     }
 }
+
+Describe 'Invoke-Task: variables as PowerShell variables' {
+    BeforeAll {
+        $script:Dir = New-TestTaskfile @'
+version: '3'
+vars:
+  GREETING: hello world
+  NUMBER: 42
+  FLAG: true
+  LIST: [a, b c]
+  NONE: []
+  MAP:
+    map: {k1: v1, k2: v2}
+  DYNAMIC:
+    sh: Write-Output 'dyn'
+  DERIVED:
+    sh: Write-Output "$GREETING!"
+env:
+  ENV_ONLY: from-env
+tasks:
+  scalars:
+    silent: true
+    cmds:
+      - Write-Output $GREETING
+      - Write-Output "$($NUMBER + 1)|$($NUMBER -is [string])|$($FLAG -eq $true)|$DYNAMIC|$DERIVED"
+  collections:
+    silent: true
+    cmds:
+      - Write-Output "$($LIST.Count)|$($LIST[1])|$($NONE.Count)|$($MAP.k2)|$($MAP['k1'])"
+      - foreach ($item in $LIST) { Write-Output "item $item" }
+  task-vars:
+    silent: true
+    vars:
+      GREETING: overridden
+      LOCAL: 'local-{{.NUMBER}}'
+    cmds:
+      - Write-Output "$GREETING|$LOCAL"
+  caller:
+    silent: true
+    vars:
+      PRIVATE: caller-only
+    cmds:
+      - task: callee
+        vars: {WHO: caller}
+      - Write-Output "caller sees [$WHO] [$PRIVATE]"
+  callee:
+    silent: true
+    cmds:
+      - Write-Output "callee sees [$WHO] [$PRIVATE]"
+  cli:
+    silent: true
+    cmds:
+      - Write-Output "$GREETING|$EXTRA|$($ITEMS -join '+')|$($COUNT + 1)"
+  not-exposed:
+    silent: true
+    cmds:
+      - Write-Output "[$ENV_ONLY] [$env:ENV_ONLY] [$PSTF_OS_VAR] [$env:PSTF_OS_VAR]"
+  special:
+    silent: true
+    cmds:
+      - Write-Output "$TASK|$($CLI_ARGS_LIST.Count)"
+      - Write-Output @CLI_ARGS_LIST
+  loop:
+    silent: true
+    cmds:
+      - for: {var: LIST}
+        cmd: Write-Output $ITEM
+      - for: {var: MAP}
+        cmd: Write-Output "$KEY=$ITEM"
+      - for: {var: LIST, as: ENTRY}
+        cmd: Write-Output "entry $ENTRY"
+  deferred:
+    silent: true
+    cmds:
+      - defer: Write-Output "deferred [$EXIT_CODE] $GREETING"
+      - exit 3
+  reserved:
+    vars:
+      HOME: taskfile-home
+      ErrorActionPreference: Continue
+    cmds:
+      - Write-Output "$($HOME -ne 'taskfile-home')|{{.HOME}}|$ErrorActionPreference|{{.ErrorActionPreference}}"
+  reassign:
+    silent: true
+    cmds:
+      - $GREETING = 'changed'
+      - Write-Output "$GREETING|{{.GREETING}}"
+  mutate:
+    silent: true
+    cmds:
+      - $MAP.k1 = 'changed'; $LIST[0] = 'changed'
+      - task: after-mutate
+  after-mutate:
+    silent: true
+    cmds:
+      - Write-Output "$($MAP.k1)|$($LIST[0])|{{.MAP.k1}}|{{index .LIST 0}}"
+  conditions:
+    silent: true
+    preconditions:
+      - sh: $GREETING -eq 'hello world'
+        msg: the precondition does not see the variable
+    cmds:
+      - cmd: Write-Output 'if ran'
+        if: $FLAG
+      - cmd: Write-Output 'if must be skipped'
+        if: -not $FLAG
+      - for: {var: LIST}
+        cmd: Write-Output 'loop-if {{.ITEM}}'
+        if: $ITEM -eq 'a'
+  up-to-date:
+    status:
+      - $NUMBER -eq 42
+    cmds:
+      - Write-Output 'must not run'
+  versions:
+    silent: true
+    cmds:
+      - task: pack
+        vars: {VERSION: '1'}
+      - task: pack
+        vars: {VERSION: '2'}
+  pack:
+    silent: true
+    vars:
+      NAME:
+        sh: Write-Output "app-$VERSION"
+    cmds:
+      - Write-Output '{{.NAME}}'
+  parallel:
+    silent: true
+    deps:
+      - task: pack-item
+        vars: {VERSION: a}
+      - task: pack-item
+        vars: {VERSION: b}
+      - task: pack-item
+        vars: {VERSION: c}
+  pack-item:
+    silent: true
+    vars:
+      NAME:
+        sh: Write-Output "item-$VERSION"
+    cmds:
+      - Write-Output "$NAME/$VERSION"
+  env-dynamic:
+    silent: true
+    env:
+      FROM_VAR:
+        sh: Write-Output "env-$NUMBER"
+    cmds:
+      - Write-Output $env:FROM_VAR
+'@
+    }
+
+    It 'exposes scalar variables with their type, unquoted values stay one argument' {
+        (Invoke-TestTask $script:Dir scalars).Lines | Should -Be @('hello world', '43|False|True|dyn|hello world!')
+    }
+
+    It 'exposes lists as arrays and maps as dictionaries' {
+        (Invoke-TestTask $script:Dir collections).Lines | Should -Be @('2|b c|0|v2|v1', 'item a', 'item b c')
+    }
+
+    It 'exposes the variables of the task' {
+        (Invoke-TestTask $script:Dir task-vars).Lines | Should -Be @('overridden|local-42')
+    }
+
+    It 'exposes the variables of a call to the called task only' {
+        (Invoke-TestTask $script:Dir caller).Lines | Should -Be @('callee sees [caller] []', 'caller sees [] [caller-only]')
+    }
+
+    It 'exposes the values given with -Variable' {
+        $result = Invoke-TestTask $script:Dir cli -With @{ Variable = @{ GREETING = 'from-cli'; EXTRA = 'extra'; ITEMS = @('x', 'y'); COUNT = 41 } }
+        $result.Lines | Should -Be @('from-cli|extra|x+y|42')
+    }
+
+    It 'does not turn environment variables into PowerShell variables' {
+        $env:PSTF_OS_VAR = 'from-os'
+        try { (Invoke-TestTask $script:Dir not-exposed).Lines | Should -Be @('[] [from-env] [] [from-os]') }
+        finally { Remove-Item Env:PSTF_OS_VAR }
+    }
+
+    It 'exposes the special variables' {
+        $result = Invoke-TestTask $script:Dir special -With @{ ArgumentList = @('one', 'two words') }
+        $result.Lines | Should -Be @('special|2', 'one', 'two words')
+    }
+
+    It 'exposes the loop variables of every iteration' {
+        (Invoke-TestTask $script:Dir loop).Lines | Should -Be @('a', 'b c', 'k1=v1', 'k2=v2', 'entry a', 'entry b c')
+    }
+
+    It 'exposes EXIT_CODE to deferred commands' {
+        (Invoke-TestTask $script:Dir deferred).Lines | Should -Contain 'deferred [3] hello world'
+    }
+
+    It 'leaves the variables of PowerShell itself alone' {
+        $result = Invoke-TestTask $script:Dir reserved -With @{ Verbose = $true }
+        $result.Lines | Should -Contain 'True|taskfile-home|Stop|Continue'
+        $result.Lines | Should -Contain 'VERBOSE: task: [reserved] variable "HOME" is reserved by PowerShell and is not available as $HOME'
+        $result.Error | Should -BeNullOrEmpty
+    }
+
+    It 'sets the variables once per task, so a command can reassign them' {
+        (Invoke-TestTask $script:Dir reassign).Lines | Should -Be @('changed|hello world')
+    }
+
+    It 'hands every task its own copy of lists and maps' {
+        (Invoke-TestTask $script:Dir mutate).Lines | Should -Be @('v1|a|v1|a')
+    }
+
+    It 'exposes the variables to preconditions and if' {
+        (Invoke-TestTask $script:Dir conditions).Lines | Should -Be @('if ran', 'loop-if a')
+    }
+
+    It 'exposes the variables to status' {
+        $result = Invoke-TestTask $script:Dir up-to-date
+        $result.Lines | Should -Be @('task: Task "up-to-date" is up to date')
+    }
+
+    It 'exposes the variables resolved so far to dynamic variables, per value' {
+        (Invoke-TestTask $script:Dir versions).Lines | Should -Be @('app-1', 'app-2')
+    }
+
+    It 'exposes the variables in tasks that run in parallel' {
+        (Invoke-TestTask $script:Dir parallel).Lines | Sort-Object | Should -Be @('item-a/a', 'item-b/b', 'item-c/c')
+    }
+
+    It 'exposes the variables to dynamic environment variables' {
+        (Invoke-TestTask $script:Dir env-dynamic).Lines | Should -Be @('env-42')
+    }
+
+    It 'exposes the variables of includes' {
+        $dir = New-TestTaskfile @'
+version: '3'
+includes:
+  lib:
+    taskfile: ./lib/Taskfile.yml
+    vars: {FROM_INCLUDE: include-var}
+'@
+        $null = Set-TestFile -Path (Join-Path $dir 'lib' 'Taskfile.yml') -Content @'
+version: '3'
+vars:
+  LIB_VAR: lib-var
+tasks:
+  show:
+    silent: true
+    cmds:
+      - Write-Output "$FROM_INCLUDE|$LIB_VAR"
+'@
+        (Invoke-TestTask $dir lib:show).Lines | Should -Be @('include-var|lib-var')
+    }
+
+    It 'finds the variables a script refers to' {
+        $names = Invoke-InModule { [TaskScript]::VariableNames('Write-Output "$A $($b.c)" $env:X @splat $script:Scoped') }
+        $names | Sort-Object | Should -Be @('A', 'b', 'Scoped', 'splat')
+        Invoke-InModule { [TaskScript]::VariableNames('no variables here').Count } | Should -Be 0
+    }
+}

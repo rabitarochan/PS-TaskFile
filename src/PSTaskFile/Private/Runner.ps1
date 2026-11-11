@@ -15,6 +15,9 @@ using namespace System.Management.Automation
 # * In 'host' mode the pipeline ends in Out-Default with errors merged, exactly like a
 #   command typed at the prompt. Native commands therefore keep the real console handles
 #   (colors, progress bars and interactive prompts work).
+# * The variables of the Taskfile are defined as PowerShell variables of the scope, so user
+#   code can write `$NAME` as well as `{{.NAME}}`. Environment variables are not: they are
+#   `$env:NAME` already.
 
 [NoRunspaceAffinity()]
 class TaskEnv {
@@ -126,11 +129,87 @@ param($scope, $code, $emit)
 }
 '@
 
+    # Names that belong to PowerShell (automatic and preference variables). A Taskfile variable
+    # with one of these names is not defined as a PowerShell variable; `{{.NAME}}` still works.
+    hidden static [HashSet[string]] $Reserved = [HashSet[string]]::new([string[]]@(
+            '_', 'args', 'ConfirmPreference', 'ConsoleFileName', 'DebugPreference', 'EnabledExperimentalFeatures',
+            'Error', 'ErrorActionPreference', 'ErrorView', 'Event', 'EventArgs', 'EventSubscriber', 'ExecutionContext',
+            'false', 'foreach', 'FormatEnumerationLimit', 'HOME', 'Host', 'InformationPreference', 'input',
+            'IsCoreCLR', 'IsLinux', 'IsMacOS', 'IsWindows', 'LASTEXITCODE', 'Matches', 'MaximumHistoryCount',
+            'MyInvocation', 'NestedPromptLevel', 'null', 'OFS', 'OutputEncoding', 'PID', 'PROFILE', 'ProgressPreference',
+            'PSBoundParameters', 'PSCmdlet', 'PSCommandPath', 'PSCulture', 'PSDebugContext', 'PSDefaultParameterValues',
+            'PSEdition', 'PSEmailServer', 'PSHOME', 'PSItem', 'PSModuleAutoLoadingPreference',
+            'PSNativeCommandArgumentPassing', 'PSNativeCommandUseErrorActionPreference', 'PSScriptRoot', 'PSSenderInfo',
+            'PSSessionApplicationName', 'PSSessionConfigurationName', 'PSSessionOption', 'PSStyle', 'PSUICulture',
+            'PSVersionTable', 'PWD', 'Sender', 'ShellId', 'StackTrace', 'switch', 'this', 'Transcript', 'true',
+            'VerbosePreference', 'WarningPreference', 'WhatIfPreference'
+        ), [StringComparer]::OrdinalIgnoreCase)
+
+    hidden static [regex] $SimpleName = [regex]::new('^[\p{L}\p{Nd}_]+$')
+
     # A fresh scope for one task run (or one dynamic variable / condition).
     static [object] NewScope() {
         $scope = [psmoduleinfo]::new($true)
         $scope.SessionState.PSVariable.Set('ErrorActionPreference', [ActionPreference]::Stop)
         return $scope
+    }
+
+    static [object] NewScope([IDictionary] $variables) {
+        $scope = [TaskScript]::NewScope()
+        $null = [TaskScript]::SetVariables($scope, $variables)
+        return $scope
+    }
+
+    # A deep copy for user code: lists become arrays, maps (case-sensitive) ordered dictionaries.
+    # The originals are shared by the whole run and must not be changed by a command.
+    hidden static [object] ToScriptValue([object] $value) {
+        $v = $value
+        if ($v -is [psobject] -and $v -isnot [System.Management.Automation.PSCustomObject]) { $v = $v.psobject.BaseObject }
+        if ($v -is [IDictionary]) {
+            $map = [System.Collections.Specialized.OrderedDictionary]::new()
+            foreach ($key in @($v.get_Keys())) { $map[[string]$key] = [TaskScript]::ToScriptValue($v[$key]) }
+            return $map
+        }
+        if ($null -ne $v -and $v -isnot [string] -and $v -is [IEnumerable]) {
+            $items = [List[object]]::new()
+            foreach ($item in $v) { $items.Add([TaskScript]::ToScriptValue($item)) }
+            return $items.ToArray()
+        }
+        return $v
+    }
+
+    # Defines Taskfile variables as PowerShell variables of $scope, so that commands can use
+    # `$NAME` next to `{{.NAME}}`. Returns the names left out because PowerShell reserves them.
+    static [string[]] SetVariables([object] $scope, [IDictionary] $variables) {
+        $skipped = [List[string]]::new()
+        if ($null -eq $variables) { return $skipped.ToArray() }
+        foreach ($key in $variables.get_Keys()) {
+            $name = [string]$key
+            if (-not [TaskScript]::SimpleName.IsMatch($name)) { continue }
+            if ([TaskScript]::Reserved.Contains($name)) { $skipped.Add($name); continue }
+            try { $scope.SessionState.PSVariable.Set($name, [TaskScript]::ToScriptValue($variables[$key])) }
+            catch { $skipped.Add($name) }
+        }
+        return $skipped.ToArray()
+    }
+
+    # The names of the PowerShell variables a script refers to (`$name`, `@name`, `$script:name`;
+    # not `$env:NAME`). Empty when the script does not parse.
+    static [string[]] VariableNames([string] $text) {
+        $names = [List[string]]::new()
+        if ([string]::IsNullOrEmpty($text) -or -not ($text.Contains('$') -or $text.Contains('@'))) { return $names.ToArray() }
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($text, [ref] $tokens, [ref] $errors)
+        $seen = [HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($node in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+            if (-not $node.VariablePath.IsVariable) { continue }
+            # UserPath keeps a scope qualifier: script:name -> name
+            $name = $node.VariablePath.UserPath
+            $name = $name.Substring($name.LastIndexOf(':') + 1)
+            if ($seen.Add($name)) { $names.Add($name) }
+        }
+        return $names.ToArray()
     }
 
     hidden static [bool] IsStop([Exception] $exception) {
@@ -228,11 +307,11 @@ param($scope, $code, $emit)
     # and its last output is not the boolean $false - so both `Test-Path x` and exit codes work.
     # The literals true / false are accepted too: Taskfiles commonly use a template that
     # renders to one of them (`if: '{{eq .ENV "prod"}}'`) and rely on the shell builtins.
-    static [bool] Test([string] $text, [string] $directory) {
+    static [bool] Test([string] $text, [string] $directory, [IDictionary] $variables) {
         $literal = $text.Trim()
         if ($literal -ceq 'true') { return $true }
         if ($literal -ceq 'false') { return $false }
-        $result = [TaskScript]::Invoke($text, [TaskScript]::NewScope(), $directory, 'capture', $null)
+        $result = [TaskScript]::Invoke($text, [TaskScript]::NewScope($variables), $directory, 'capture', $null)
         if ($result.ExitCode -ne 0) { return $false }
         $last = $null
         if ($null -ne $result.Output) { foreach ($item in $result.Output) { $last = $item } }
