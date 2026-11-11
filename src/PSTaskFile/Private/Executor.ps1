@@ -414,7 +414,7 @@ class TaskExecutor {
             return
         }
         if (-not [string]::IsNullOrEmpty($cmd.If) -and -not $ctx.Options.Dry -and -not [TaskExecutor]::Condition($ctx, $task, $cmd.If)) {
-            [TaskLog]::Verbose($ctx, "task: [$name] if condition not met - skipped: $($cmd.Cmd)")
+            [TaskLog]::Verbose($ctx, "task: [$name] if condition not met - skipped")
             return
         }
         if ($ctx.Options.Verbose -or -not [TaskExecutor]::IsSilent($ctx, $task, $call, $cmd.Silent)) {

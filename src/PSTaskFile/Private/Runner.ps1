@@ -226,7 +226,12 @@ param($scope, $code, $emit)
 
     # Evaluates a condition (status / precondition / if). It holds when the script succeeds
     # and its last output is not the boolean $false - so both `Test-Path x` and exit codes work.
+    # The literals true / false are accepted too: Taskfiles commonly use a template that
+    # renders to one of them (`if: '{{eq .ENV "prod"}}'`) and rely on the shell builtins.
     static [bool] Test([string] $text, [string] $directory) {
+        $literal = $text.Trim()
+        if ($literal -ceq 'true') { return $true }
+        if ($literal -ceq 'false') { return $false }
         $result = [TaskScript]::Invoke($text, [TaskScript]::NewScope(), $directory, 'capture', $null)
         if ($result.ExitCode -ne 0) { return $false }
         $last = $null
