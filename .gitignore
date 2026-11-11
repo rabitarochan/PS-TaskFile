@@ -1,0 +1,13 @@
+# Task state (checksums / timestamps)
+.task/
+
+# Test output
+TestResults/
+testResults.xml
+coverage.xml
+
+# Editor / OS noise
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
