@@ -27,15 +27,23 @@ class TaskEnv {
         return $snapshot
     }
 
+    # Sets or removes ($null) a process environment variable. PowerShell turns $null into an
+    # empty string for [string] parameters, which would create an empty variable instead of
+    # removing it - hence [NullString].
+    static [void] Set([string] $name, [object] $value) {
+        if ($null -eq $value) { [Environment]::SetEnvironmentVariable($name, [NullString]::Value) }
+        else { [Environment]::SetEnvironmentVariable($name, [string]$value) }
+    }
+
     # Makes the process environment equal to the snapshot again.
     static [void] Restore([hashtable] $snapshot) {
         $current = [TaskEnv]::Snapshot()
         foreach ($key in $current.get_Keys()) {
-            if (-not $snapshot.ContainsKey($key)) { [Environment]::SetEnvironmentVariable($key, $null) }
+            if (-not $snapshot.ContainsKey($key)) { [TaskEnv]::Set($key, $null) }
         }
         foreach ($key in $snapshot.get_Keys()) {
             if (-not $current.ContainsKey($key) -or [string]$current[$key] -cne [string]$snapshot[$key]) {
-                [Environment]::SetEnvironmentVariable($key, [string]$snapshot[$key])
+                [TaskEnv]::Set($key, $snapshot[$key])
             }
         }
     }
@@ -69,7 +77,7 @@ class TaskEnv {
                 if ($null -ne $overrides) {
                     foreach ($key in $overrides.get_Keys()) {
                         $saved[[string]$key] = [Environment]::GetEnvironmentVariable([string]$key)
-                        [Environment]::SetEnvironmentVariable([string]$key, [string]$overrides[$key])
+                        [TaskEnv]::Set([string]$key, [string]$overrides[$key])
                     }
                 }
                 $gate.Saved = $saved
@@ -87,7 +95,7 @@ class TaskEnv {
             if ($gate.Active -le 0) {
                 $gate.Active = 0
                 if ($null -ne $gate.Saved) {
-                    foreach ($key in $gate.Saved.get_Keys()) { [Environment]::SetEnvironmentVariable([string]$key, $gate.Saved[$key]) }
+                    foreach ($key in $gate.Saved.get_Keys()) { [TaskEnv]::Set([string]$key, $gate.Saved[$key]) }
                 }
                 $gate.Saved = $null
                 $gate.Signature = ''

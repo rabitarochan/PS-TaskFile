@@ -437,7 +437,6 @@ class TaskExecutor {
         $skipFingerprinting = $ctx.Options.ForceAll -or (-not $call.Indirect -and $ctx.Options.Force)
         if (-not $skipFingerprinting) {
             $ctx.Cancel.Token.ThrowIfCancellationRequested()
-            [TaskExecutor]::CheckAllowedValues($task)
             foreach ($precondition in $task.Preconditions) {
                 if (-not [TaskExecutor]::Condition($ctx, $task, $precondition.Sh)) {
                     [TaskLog]::Info($ctx, "task: $($precondition.Msg)", 'Magenta')
@@ -543,6 +542,7 @@ class TaskExecutor {
         [TaskExecutor]::CheckRequiredVars($fast)
 
         $task = [TaskCompiler]::Compile($ctx, $original, $call, $true)
+        [TaskExecutor]::CheckAllowedValues($task)
 
         $count = 0
         [System.Threading.Monitor]::Enter($ctx.Lock)
