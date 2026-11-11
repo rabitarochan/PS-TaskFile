@@ -97,7 +97,7 @@ class TaskPath {
     # Remote Taskfiles (an experiment of go-task) are not implemented.
     static [void] AssertLocal([string] $path) {
         if ($path -match '^(https?|git|ssh)://' -or $path -match '^git@') {
-            throw [TaskError]::Create("task: Remote Taskfiles are not supported by PSTaskFile: $path", [TaskError]::TaskfileInvalid)
+            throw [TaskError]::Create("task: Remote Taskfiles are not supported by PS-TaskFile: $path", [TaskError]::TaskfileInvalid)
         }
     }
 

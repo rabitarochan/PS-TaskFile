@@ -36,7 +36,7 @@ function New-Taskfile {
 
     $content = @'
 # https://taskfile.dev
-# Commands are PowerShell: run them with Invoke-Task (module PSTaskFile).
+# Commands are PowerShell: run them with Invoke-Task (module PS-TaskFile).
 
 version: '3'
 

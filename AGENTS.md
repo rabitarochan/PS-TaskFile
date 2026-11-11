@@ -4,7 +4,7 @@ Guidance for AI coding agents (and humans) working on this repository.
 
 ## What this is
 
-PSTaskFile is a PowerShell module that implements the [Task](https://taskfile.dev) runner
+PS-TaskFile is a PowerShell module that implements the [Task](https://taskfile.dev) runner
 (`task`, go-task) for Taskfiles whose commands are PowerShell. User-facing behaviour is
 documented in `README.md`; keep it in sync with the code (command table, "How commands
 run", "What is supported").
@@ -25,13 +25,13 @@ pwsh -NoProfile -File tools/Invoke-Tests.ps1 -Path tests/Template.Tests.ps1 -Out
 pwsh -NoProfile -File tools/Invoke-Tests.ps1 -FullName '*wildcard*'
 
 # The repository's own Taskfile (dogfooding)
-pwsh -NoProfile -Command "Import-Module ./src/PSTaskFile/PSTaskFile.psd1; Invoke-Task test:Loader"
+pwsh -NoProfile -Command "Import-Module ./src/PS-TaskFile/PS-TaskFile.psd1; Invoke-Task test:Loader"
 ```
 
 A session that imported the module keeps the classes it loaded first. When the files change
 afterwards, a class in one file resolves the classes of *other* files to the old ones, so new
 and old code get mixed - `Import-Module -Force` does not help. `Test-TaskModuleChanged`
-(`PSTaskFile.psm1`, called on import and by `Invoke-TaskEngine`) detects this and tells the
+(`PS-TaskFile.psm1`, called on import and by `Invoke-TaskEngine`) detects this and tells the
 user to start a new session. So: never verify a change in a session that has already used
 the module, and do not edit `src/` while the test suite runs.
 
@@ -42,9 +42,9 @@ skipped. PSScriptAnalyzer is optional (`Invoke-Task lint`).
 ## Layout
 
 ```
-src/PSTaskFile/
-  PSTaskFile.psd1      manifest (exports, RequiredModules)
-  PSTaskFile.psm1      loads Private/*.ps1 in a fixed order, then Public/*.ps1
+src/PS-TaskFile/
+  PS-TaskFile.psd1     manifest (exports, RequiredModules)
+  PS-TaskFile.psm1     loads Private/*.ps1 in a fixed order, then Public/*.ps1
   Public/              one file per exported command
   Private/
     Yaml.ps1           TaskYaml: YAML via the YamlDotNet node model (case-sensitive keys, positions)
@@ -62,7 +62,7 @@ tools/Invoke-Tests.ps1 test runner
 Taskfile.yml           development tasks, run by the module itself
 ```
 
-A new private file must be added to `$privateOrder` in `PSTaskFile.psm1`; classes have to be
+A new private file must be added to `$privateOrder` in `PS-TaskFile.psm1`; classes have to be
 defined before a later file references them. A new public command needs its file in
 `Public/`, an entry in `FunctionsToExport`, comment-based help with an example, and a row in
 the README table.

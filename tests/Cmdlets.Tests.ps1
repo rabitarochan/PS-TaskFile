@@ -4,14 +4,14 @@ BeforeAll {
 
 Describe 'Module surface' {
     It 'exports exactly the public commands' {
-        (Get-Command -Module PSTaskFile).Name | Sort-Object | Should -Be @(
+        (Get-Command -Module PS-TaskFile).Name | Sort-Object | Should -Be @(
             'Get-Task', 'Get-TaskSummary', 'Invoke-Task', 'New-Taskfile', 'Test-Task', 'Watch-Task'
         )
     }
 
     It 'uses approved verbs' {
         $approved = (Get-Verb).Verb
-        (Get-Command -Module PSTaskFile).Verb | ForEach-Object { $_ | Should -BeIn $approved }
+        (Get-Command -Module PS-TaskFile).Verb | ForEach-Object { $_ | Should -BeIn $approved }
     }
 
     It 'has help for <_>' -ForEach @('Get-Task', 'Get-TaskSummary', 'Invoke-Task', 'New-Taskfile', 'Test-Task', 'Watch-Task') {
@@ -70,7 +70,7 @@ tasks:
     It 'lists the tasks that have a description' {
         $tasks = @(Get-Task -Directory $script:Root)
         $tasks.Name | Should -Be @('build', 'done', 'test', 'docs:serve', 'run:*')
-        $tasks[0].PSObject.TypeNames[0] | Should -Be 'PSTaskFile.TaskInfo'
+        $tasks[0].PSObject.TypeNames[0] | Should -Be 'PS-TaskFile.TaskInfo'
     }
 
     It 'returns the details of each task' {

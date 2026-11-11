@@ -1,6 +1,6 @@
-# Development tasks for PSTaskFile, run by PSTaskFile itself:
+# Development tasks for PS-TaskFile, run by PS-TaskFile itself:
 #
-#   Import-Module ./src/PSTaskFile/PSTaskFile.psd1 -Force
+#   Import-Module ./src/PS-TaskFile/PS-TaskFile.psd1 -Force
 #   Get-Task
 #   Invoke-Task test
 #
@@ -9,7 +9,7 @@
 version: '3'
 
 vars:
-  MANIFEST: src/PSTaskFile/PSTaskFile.psd1
+  MANIFEST: src/PS-TaskFile/PS-TaskFile.psd1
 
 tasks:
   default:

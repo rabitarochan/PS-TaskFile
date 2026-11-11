@@ -28,7 +28,7 @@ class TaskYaml {
             Import-Module powershell-yaml -ErrorAction Stop
             $null = ConvertFrom-Yaml -Yaml 'a: 1'
         }
-        throw "PSTaskFile requires the 'powershell-yaml' module (YamlDotNet could not be located)."
+        throw "PS-TaskFile requires the 'powershell-yaml' module (YamlDotNet could not be located)."
     }
 
     # Parses YAML text and returns the root node ($null for an empty document).

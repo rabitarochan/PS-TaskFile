@@ -154,7 +154,7 @@ class TaskExecutor {
         }
         $shell = [powershell]::Create()
         $shell.Runspace = $runspace
-        $entry = 'param($ctx, $call) & (Get-Module PSTaskFile) { param($c, $k) [TaskExecutor]::RunBranch($c, $k) } $ctx $call'
+        $entry = 'param($ctx, $call) & (Get-Module PS-TaskFile) { param($c, $k) [TaskExecutor]::RunBranch($c, $k) } $ctx $call'
         [void]$shell.AddScript($entry).AddArgument($ctx).AddArgument($call)
         return @{ Shell = $shell; Runspace = $runspace; Handle = $shell.BeginInvoke(); Done = $false }
     }

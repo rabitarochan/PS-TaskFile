@@ -1,9 +1,9 @@
-# PSTaskFile
+# PS-TaskFile
 
 A PowerShell implementation of the [Task](https://taskfile.dev) runner.
 
 `task` runs the commands of a `Taskfile.yml` with a POSIX shell interpreter, so PowerShell
-has to be wrapped in `pwsh -c '...'` strings. PSTaskFile reads the same Taskfile format but
+has to be wrapped in `pwsh -c '...'` strings. PS-TaskFile reads the same Taskfile format but
 runs everything as PowerShell:
 
 - `cmds`, `status`, `preconditions` and `if` are PowerShell code. Assignments, pipelines,
@@ -76,15 +76,15 @@ Created dist/app-1.2.3.zip
   (`Install-Module powershell-yaml -Scope CurrentUser`)
 
 The module is not published to the PowerShell Gallery. Import it from a clone, or copy
-`src/PSTaskFile` into a directory of `$env:PSModulePath`:
+`src/PS-TaskFile` into a directory of `$env:PSModulePath`:
 
 ```powershell
-Import-Module ./src/PSTaskFile/PSTaskFile.psd1
+Import-Module ./src/PS-TaskFile/PS-TaskFile.psd1
 ```
 
 **After updating the module, start a new PowerShell session.** PowerShell cannot replace
 the classes of a module that a session has already loaded, and `Import-Module -Force` does
-not change that. PSTaskFile notices when its files changed since the session loaded them
+not change that. PS-TaskFile notices when its files changed since the session loaded them
 and stops with a message saying so, instead of running a mix of old and new code.
 
 Developed and tested on Windows. Nothing in the module is Windows-specific, but it has not
@@ -92,7 +92,7 @@ been run on Linux or macOS yet.
 
 ## Commands
 
-| `task` | PSTaskFile |
+| `task` | PS-TaskFile |
 | --- | --- |
 | `task build test` | `Invoke-Task build, test` |
 | `task build CONFIG=Release` | `Invoke-Task build -Variable @{ CONFIG = 'Release' }` |
@@ -117,7 +117,7 @@ been run on Linux or macOS yet.
 | `--sort` | `Get-Task -Sort` |
 | `--color=false` | `-NoColor` (or `NO_COLOR=1`) |
 | `--completion` | built in: task names complete with <kbd>Tab</kbd> |
-| `--version` | `(Get-Module PSTaskFile).Version` |
+| `--version` | `(Get-Module PS-TaskFile).Version` |
 
 `Get-Help Invoke-Task -Full` (and the same for the other commands) describes every
 parameter. The short flags of `task` exist as aliases (`-t`, `-d`, `-f`, `-s`, `-p`, ...).
@@ -271,7 +271,7 @@ The `prefixed` and `group` output styles capture the output as text lines in bot
 In scripts and CI:
 
 ```powershell
-pwsh -NoProfile -Command "Import-Module PSTaskFile; Invoke-Task build; exit `$LASTEXITCODE"
+pwsh -NoProfile -Command "Import-Module PS-TaskFile; Invoke-Task build; exit `$LASTEXITCODE"
 ```
 
 ## Templates
@@ -311,7 +311,7 @@ Not supported:
 
 Things to know when coming from `task`:
 
-- A Taskfile written for PSTaskFile is not runnable by `task`, and vice versa, unless its
+- A Taskfile written for PS-TaskFile is not runnable by `task`, and vice versa, unless its
   commands mean the same in both shells.
 - `$NAME` in a command is a PowerShell variable - a variable of the Taskfile or one the
   task assigned - not an environment variable as in `sh`. Environment variables are
@@ -333,7 +333,7 @@ pwsh -NoProfile -File tools/Invoke-Tests.ps1 -Path tests/Template.Tests.ps1 -Out
 or, with the module itself (see `Taskfile.yml`):
 
 ```powershell
-Import-Module ./src/PSTaskFile/PSTaskFile.psd1 -Force
+Import-Module ./src/PS-TaskFile/PS-TaskFile.psd1 -Force
 Invoke-Task test
 Invoke-Task test:Template
 ```

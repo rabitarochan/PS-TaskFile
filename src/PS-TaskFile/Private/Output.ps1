@@ -22,7 +22,7 @@ class TaskLog {
             $message = [HostInformationMessage]::new()
             $message.Message = $text
             if ($useColor) { $message.ForegroundColor = [ConsoleColor]$color }
-            $record = [InformationRecord]::new($message, 'PSTaskFile')
+            $record = [InformationRecord]::new($message, 'PS-TaskFile')
             $record.Tags.Add('PSHOST')
             $ctx.Sink.Add([DictionaryEntry]::new('i', $record))
             return

@@ -37,7 +37,7 @@ function Get-Task {
         Invoke-Task
     #>
     [CmdletBinding()]
-    [OutputType('PSTaskFile.TaskInfo')]
+    [OutputType('PS-TaskFile.TaskInfo')]
     param(
         [Parameter(Position = 0)]
         [SupportsWildcards()]
@@ -72,7 +72,7 @@ function Get-Task {
         return
     }
     foreach ($task in $tasks) {
-        $task.PSObject.TypeNames.Insert(0, 'PSTaskFile.TaskInfo')
+        $task.PSObject.TypeNames.Insert(0, 'PS-TaskFile.TaskInfo')
         $task
     }
 }

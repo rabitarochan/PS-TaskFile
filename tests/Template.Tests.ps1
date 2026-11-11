@@ -1,6 +1,6 @@
 BeforeAll {
-    Import-Module (Join-Path $PSScriptRoot '..' 'src' 'PSTaskFile' 'PSTaskFile.psd1') -Force
-    $module = Get-Module PSTaskFile
+    Import-Module (Join-Path $PSScriptRoot '..' 'src' 'PS-TaskFile' 'PS-TaskFile.psd1') -Force
+    $module = Get-Module PS-TaskFile
     $script:ExpandCommand = & $module { Get-Command Expand-TaskTemplate }
     $script:ResolveCommand = & $module { Get-Command Resolve-TaskTemplateValue }
     $script:ExpandValueCommand = & $module { Get-Command Expand-TaskTemplateValue }

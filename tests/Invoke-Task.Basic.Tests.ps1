@@ -4,7 +4,7 @@ BeforeAll {
 
 Describe 'Invoke-Task: basics' {
     It 'is exported by the module' {
-        (Get-Command Invoke-Task).Module.Name | Should -Be 'PSTaskFile'
+        (Get-Command Invoke-Task).Module.Name | Should -Be 'PS-TaskFile'
     }
 
     It 'runs the default task and echoes each command' {

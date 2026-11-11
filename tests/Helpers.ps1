@@ -1,12 +1,12 @@
 # Shared helpers for the test suite. Dot-source from BeforeAll:  . "$PSScriptRoot/Helpers.ps1"
 
-$script:ModuleManifest = Join-Path $PSScriptRoot '..' 'src' 'PSTaskFile' 'PSTaskFile.psd1'
+$script:ModuleManifest = Join-Path $PSScriptRoot '..' 'src' 'PS-TaskFile' 'PS-TaskFile.psd1'
 Import-Module $script:ModuleManifest -Force
 
 function Invoke-InModule {
     <# Runs a script block inside the module scope so that private classes and functions are reachable. #>
     param([Parameter(Mandatory)][scriptblock]$ScriptBlock, [object[]]$ArgumentList = @())
-    & (Get-Module PSTaskFile) $ScriptBlock @ArgumentList
+    & (Get-Module PS-TaskFile) $ScriptBlock @ArgumentList
 }
 
 function New-TestDirectory {

@@ -44,7 +44,7 @@ function Invoke-TaskEngine {
         [System.Management.Automation.PSCmdlet]$Cmdlet,
         [Parameter(Mandatory)][hashtable]$Request
     )
-    # Classes of two versions in one process do not work together (see PSTaskFile.psm1).
+    # Classes of two versions in one process do not work together (see PS-TaskFile.psm1).
     if (Test-TaskModuleChanged) {
         return @{ Ok = $false; Message = "task: $script:ModuleChanged"; Code = 1; ExitStatus = $null; Exception = $null }
     }
@@ -65,7 +65,7 @@ function Invoke-TaskEngine {
         $runspace.Open()
         $shell = [powershell]::Create()
         $shell.Runspace = $runspace
-        $null = $shell.AddScript('param($request) & (Get-Module PSTaskFile) { param($r) [TaskEngine]::Run($r) } $request').AddArgument($Request)
+        $null = $shell.AddScript('param($request) & (Get-Module PS-TaskFile) { param($r) [TaskEngine]::Run($r) } $request').AddArgument($Request)
         $async = $shell.BeginInvoke()
         $output = $null
         try {
