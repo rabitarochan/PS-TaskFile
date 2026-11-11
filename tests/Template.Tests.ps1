@@ -320,6 +320,12 @@ Describe 'Expand-TaskTemplate' {
             @{ Template = '{{dig "nope" "value" "dflt" .NESTED}}'; Expected = 'dflt' }
             @{ Template = '{{merge (dict "a" 1) (dict "b" 2)}}'; Expected = 'map[a:1 b:2]' }
             @{ Template = '{{append .LIST "d" | len}}/{{len .LIST}}'; Expected = '4/3' }
+            @{ Template = '{{index (list "abc") 0}}'; Expected = 'abc' }
+            @{ Template = '{{with (list "solo")}}{{len .}}:{{index . 0}}{{end}}'; Expected = '1:solo' }
+            @{ Template = '{{dict "k" (list 1) | toJson}}'; Expected = '{"k":[1]}' }
+            @{ Template = '{{or (list) (list "x") | len}}'; Expected = '1' }
+            @{ Template = '{{define "T"}}{{len .}}{{end}}{{template "T" (list "x")}}'; Expected = '1' }
+            @{ Template = '{{regexSplit "," "abc" -1 | len}}'; Expected = '1' }
         ) {
             Expand-T $Template | Should -BeExactly $Expected
         }

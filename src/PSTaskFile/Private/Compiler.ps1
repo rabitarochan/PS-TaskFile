@@ -151,7 +151,7 @@ class TaskCompiler {
             else { $value = [TaskCompiler]::ReplaceValue($cache, $var.Value, $null) }
 
             if (-not $evaluateSh) {
-                $result[$name] = if ($null -eq $value) { '' } else { $value }
+                if ($null -eq $value) { $result[$name] = '' } else { $result[$name] = $value }
                 continue
             }
             [TaskCompiler]::ThrowIfError($cache)
@@ -235,7 +235,8 @@ class TaskCompiler {
             return @{ Values = $values; Keys = $null }
         }
         if ($for.From -eq 'sources' -or $for.From -eq 'generates') {
-            $globs = if ($for.From -eq 'sources') { $task.Sources } else { $task.Generates }
+            $globs = $task.Generates
+            if ($for.From -eq 'sources') { $globs = $task.Sources }
             foreach ($file in [TaskGlob]::Expand($task.Dir, $globs)) { $values.Add([System.IO.Path]::GetRelativePath($task.Dir, $file)) }
             return @{ Values = $values; Keys = $null }
         }

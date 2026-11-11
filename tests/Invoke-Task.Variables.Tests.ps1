@@ -12,6 +12,8 @@ vars:
   NUMBER: 42
   FLAG: true
   LIST: [a, b, c]
+  ONE: [solo]
+  NONE: []
   MAP:
     map: {k1: v1, k2: v2}
   DYNAMIC:
@@ -41,6 +43,12 @@ tasks:
     silent: true
     cmds:
       - Write-Output '{{range .REF}}{{.}}{{end}}|{{.REF_INDEX}}|{{len .REF}}'
+  small-lists:
+    silent: true
+    cmds:
+      - Write-Output '{{len .ONE}}:{{index .ONE 0}}|{{len .NONE}}|{{kindOf .ONE}}|{{kindOf .NONE}}'
+      - for: {var: ONE}
+        cmd: Write-Output 'item {{.ITEM}}'
   task-vars:
     silent: true
     vars:
@@ -142,6 +150,10 @@ tasks:
 
     It 'keeps the type of referenced variables' {
         (Invoke-TestTask $script:Dir ref).Lines | Should -Be @('abc|b|3')
+    }
+
+    It 'keeps one-element and empty lists as lists' {
+        (Invoke-TestTask $script:Dir small-lists).Lines | Should -Be @('1:solo|0|slice|slice', 'item solo')
     }
 
     It 'lets task variables override global ones' {

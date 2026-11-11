@@ -187,14 +187,15 @@ class TaskfileReader {
 
     static [OrderedDictionary] NewMap() { return [OrderedDictionary]::new() }
 
+    # NOTE: never assign a value that may be a collection through an `if` expression
+    # (`$x = if (...) { $list }`): PowerShell enumerates the result, so a one-element list
+    # silently becomes its element and an empty list becomes $null.
     static [object] NewVar([string] $kind, [object] $value) {
-        return [pscustomobject]@{
-            Kind  = $kind
-            Value = if ($kind -eq 'static') { $value } else { $null }
-            Sh    = if ($kind -eq 'sh') { [string]$value } else { $null }
-            Ref   = if ($kind -eq 'ref') { [string]$value } else { $null }
-            Dir   = ''
-        }
+        $var = [pscustomobject]@{ Kind = $kind; Value = $null; Sh = $null; Ref = $null; Dir = '' }
+        if ($kind -eq 'sh') { $var.Sh = [string]$value }
+        elseif ($kind -eq 'ref') { $var.Ref = [string]$value }
+        else { $var.Value = $value }
+        return $var
     }
 
     static [object] CopyVar([object] $var, [string] $dir) {
@@ -444,10 +445,9 @@ class TaskfileReader {
         foreach ($item in [TaskYaml]::Seq([TaskfileReader]::Get($requires, 'vars'))) {
             if ([TaskYaml]::IsMap($item)) {
                 $required = [TaskYaml]::Map($item)
-                $task.Requires.Add([pscustomobject]@{
-                        Name = [TaskYaml]::Str([TaskfileReader]::Get($required, 'name'))
-                        Enum = if ($required.Contains('enum')) { [TaskYaml]::StrList($required['enum']) } else { $null }
-                    })
+                $entry = [pscustomobject]@{ Name = [TaskYaml]::Str([TaskfileReader]::Get($required, 'name')); Enum = $null }
+                if ($required.Contains('enum')) { $entry.Enum = [TaskYaml]::StrList($required['enum']) }
+                $task.Requires.Add($entry)
             }
             else { $task.Requires.Add([pscustomobject]@{ Name = [TaskYaml]::Str($item); Enum = $null }) }
         }
@@ -539,7 +539,12 @@ class TaskfileReader {
         $text = [System.IO.File]::ReadAllText($path)
         $root = $null
         try { $root = [TaskYaml]::Load($text) }
-        catch { throw [TaskError]::Create("task: Failed to parse ${path}:`n$([TaskError]::Unwrap($_.Exception).Message)", [TaskError]::TaskfileInvalid) }
+        catch {
+            $cause = [TaskError]::Unwrap($_.Exception)
+            # YamlDotNet throws a bare System.Exception for some malformed flow collections.
+            $detail = if ($cause.GetType() -eq [System.Exception]) { "invalid YAML syntax (values containing '{{ }}' inside [ ] or { } must be quoted)" } else { $cause.Message }
+            throw [TaskError]::Create("task: Failed to parse ${path}:`nyaml: $detail", [TaskError]::TaskfileInvalid)
+        }
         if ([TaskYaml]::Kind($root) -ne 'map') { throw [TaskfileReader]::Invalid($path, $null, 'the Taskfile must be a YAML map') }
         $document = [TaskYaml]::Map($root)
 

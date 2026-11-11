@@ -596,3 +596,11 @@ tasks:
         }
     }
 }
+
+Describe 'TaskfileReader error messages' {
+    It 'reports malformed flow collections as YAML errors' {
+        $dir = New-TestTaskfile -Content "version: '3'`ntasks:`n  a:`n    cmds: [Write-Output '{{.X}} y']`n  b:`n    cmds: [Write-Output z]`n"
+        { Import-TestTaskfile $dir } | Should -Throw -ExpectedMessage '*Failed to parse*yaml: *'
+        Get-TaskErrorCode { Import-TestTaskfile $dir } | Should -Be 109
+    }
+}

@@ -570,7 +570,8 @@ class TplExec {
             'template' {
                 $body = $null
                 if (-not $this.Templates.TryGetValue([string]$node.Value, [ref] $body)) { throw "template `"$($node.Value)`" not defined" }
-                $newDot = if ($null -ne $node.Pipe) { $this.EvalPipeline($dot, $node.Pipe) } else { $null }
+                $newDot = $null
+                if ($null -ne $node.Pipe) { $newDot = $this.EvalPipeline($dot, $node.Pipe) }
                 if ($this.Depth -ge 1000) { throw 'exceeded maximum template depth (1000)' }
                 $saved = $this.Vars
                 $this.Vars = [List[object[]]]::new()
@@ -586,7 +587,8 @@ class TplExec {
             $value = $this.EvalPipeline($dot, $node.Pipe)
             $r = 0
             if ([TplFn]::Truth($value)) {
-                $inner = if ($node.Kind -eq 'with') { $value } else { $dot }
+                $inner = $dot
+                if ($node.Kind -eq 'with') { $inner = $value }
                 $r = $this.Walk($inner, $node.List)
             }
             elseif ($null -ne $node.ElseList) {
@@ -739,7 +741,7 @@ class TplExec {
             if ($total -eq 0) { throw "wrong number of args for ${name}: want at least 1 got 0" }
             $value = $null
             for ($k = 0; $k -lt $total; $k++) {
-                $value = if ($k -lt $argCount) { $this.EvalArg($dot, $command.Items[$k + 1]) } else { $final }
+                if ($k -lt $argCount) { $value = $this.EvalArg($dot, $command.Items[$k + 1]) } else { $value = $final }
                 $truth = [TplFn]::Truth($value)
                 if (($name -ceq 'and' -and -not $truth) -or ($name -ceq 'or' -and $truth)) { return $value }
             }
@@ -1672,7 +1674,8 @@ class TplFn {
             elseif ([TplFn]::IsList($c)) {
                 if (-not [TplFn]::IsInt([TplFn]::Unwrap($index))) { throw "cannot index slice/array with type $([TplFn]::TypeOf($index))" }
                 $position = [TplFn]::ToInt64($index)
-                $list = if ($c -is [IList]) { [IList]$c } else { [TplFn]::ToList($c) }
+                $list = $null
+                if ($c -is [IList]) { $list = $c } else { $list = [TplFn]::ToList($c) }
                 if ($position -lt 0 -or $position -ge $list.Count) { throw "index out of range: $position" }
                 $current = $list[[int]$position]
             }
@@ -2104,7 +2107,7 @@ class TplFn {
             'dict' {
                 $dict = [TplFn]::NewDict()
                 for ($i = 0; $i -lt $n; $i += 2) {
-                    $dict[[TplFn]::Str($a[$i])] = if ($i + 1 -lt $n) { $a[$i + 1] } else { '' }
+                    if ($i + 1 -lt $n) { $dict[[TplFn]::Str($a[$i])] = $a[$i + 1] } else { $dict[[TplFn]::Str($a[$i])] = '' }
                 }
                 return $dict
             }
@@ -2172,7 +2175,8 @@ class TplFn {
             { $_ -ceq 'regexSplit' -or $_ -ceq 'mustRegexSplit' } {
                 $limit = [int][TplFn]::ToInt64($a[2])
                 $regex = [regex]::new([TplFn]::Str($a[0]))
-                $parts = if ($limit -lt 0) { $regex.Split([TplFn]::Str($a[1])) } else { $regex.Split([TplFn]::Str($a[1]), $limit) }
+                $parts = [string[]]@()
+                if ($limit -lt 0) { $parts = $regex.Split([TplFn]::Str($a[1])) } else { $parts = $regex.Split([TplFn]::Str($a[1]), $limit) }
                 return [List[object]]::new([object[]]$parts)
             }
             'regexQuoteMeta' { return [TplFn]::RegexQuoteMeta([TplFn]::Str($a[0])) }
