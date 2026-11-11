@@ -434,3 +434,117 @@ tasks:
         $result.Lines[-1] | Should -Be 'still-alive'
     }
 }
+
+Describe 'Invoke-Task: Taskfile location' {
+    BeforeAll {
+        $script:HomeDir = New-TestDirectory
+        $null = Set-TestFile -Path (Join-Path $script:HomeDir 'Taskfile.yml') -Content @"
+version: '3'
+includes:
+  shared: ~/shared.yml
+tasks:
+  whoami:
+    silent: true
+    cmds:
+      - Write-Output 'global task'
+      - (Get-Location).ProviderPath
+  here:
+    silent: true
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - (Get-Location).ProviderPath
+"@
+        $null = Set-TestFile -Path (Join-Path $script:HomeDir 'shared.yml') -Content "version: '3'`ntasks:`n  hello:`n    silent: true`n    cmds: [Write-Output shared-hello]"
+        $script:HomeVariable = if ($IsWindows) { 'USERPROFILE' } else { 'HOME' }
+        $script:OriginalHome = [Environment]::GetEnvironmentVariable($script:HomeVariable)
+        [Environment]::SetEnvironmentVariable($script:HomeVariable, $script:HomeDir)
+    }
+
+    AfterAll {
+        [Environment]::SetEnvironmentVariable($script:HomeVariable, $script:OriginalHome)
+    }
+
+    It 'runs the Taskfile of the home directory with -Global' {
+        $records = @(Invoke-Task -Global -Name whoami -PassThru 6>&1 | ForEach-Object { "$_" })
+        $records | Should -Be @('global task', $script:HomeDir)
+    }
+
+    It 'lets a global task run in the directory of the caller' {
+        $here = (Get-Location).ProviderPath
+        @(Invoke-Task -Global -Name here -PassThru 6>&1 | ForEach-Object { "$_" }) | Should -Be @($here)
+    }
+
+    It 'expands ~ in include paths' {
+        @(Invoke-Task -Global -Name shared:hello -PassThru 6>&1 | ForEach-Object { "$_" }) | Should -Be @('shared-hello')
+    }
+
+    It 'rejects remote Taskfiles with a clear message' {
+        $dir = New-TestTaskfile "version: '3'`nincludes:`n  remote: https://example.com/Taskfile.yml`ntasks: {}"
+        $result = Invoke-TestTask $dir
+        $result.Error.Exception.Message | Should -BeLike 'task: Remote Taskfiles are not supported*https://example.com/Taskfile.yml*'
+    }
+}
+
+Describe 'Invoke-Task: nesting and stopping' {
+    It 'can be called from a command of a task' {
+        $dir = New-TestTaskfile @"
+version: '3'
+tasks:
+  outer:
+    silent: true
+    cmds:
+      - Write-Output outer-before
+      - Invoke-Task inner -Variable @{ WHO = 'nested' } -PassThru
+      - Write-Output outer-after
+  inner:
+    silent: true
+    cmds:
+      - Write-Output 'inner for {{.WHO}}'
+  outer-fails:
+    silent: true
+    cmds:
+      - Invoke-Task broken
+  broken:
+    silent: true
+    cmds:
+      - exit 6
+"@
+        (Invoke-TestTask $dir outer).Lines | Should -Be @('outer-before', 'inner for nested', 'outer-after')
+        $failed = Invoke-TestTask $dir outer-fails
+        $failed.Error.Exception.Message | Should -Be 'task: Failed to run task "outer-fails": task: Failed to run task "broken": exit status 6'
+    }
+
+    It 'stops running commands, including native ones, when the caller is stopped' {
+        $dir = New-TestTaskfile @"
+version: '3'
+tasks:
+  long:
+    silent: true
+    deps: [long-dep]
+    cmds:
+      - Set-Content -Path started.txt -Value x
+      - pwsh -NoProfile -Command "Start-Sleep -Seconds 60"
+      - Set-Content -Path finished.txt -Value x
+  long-dep:
+    silent: true
+    cmds:
+      - Write-Output dep
+"@
+        $job = Start-ThreadJob -ScriptBlock {
+            param($manifest, $dir)
+            Import-Module $manifest
+            Invoke-Task -Directory $dir -Name long -PassThru *>&1
+        } -ArgumentList $script:ModuleManifest, $dir
+        try {
+            $deadline = [datetime]::UtcNow.AddSeconds(30)
+            while (-not (Test-Path (Join-Path $dir 'started.txt')) -and [datetime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
+            Test-Path (Join-Path $dir 'started.txt') | Should -BeTrue
+            Start-Sleep -Milliseconds 500
+            $watch = [System.Diagnostics.Stopwatch]::StartNew()
+            $job | Stop-Job
+            $watch.Elapsed.TotalSeconds | Should -BeLessThan 15
+        }
+        finally { $job | Remove-Job -Force }
+        Test-Path (Join-Path $dir 'finished.txt') | Should -BeFalse
+    }
+}

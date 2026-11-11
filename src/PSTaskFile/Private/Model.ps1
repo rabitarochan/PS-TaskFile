@@ -78,12 +78,27 @@ class TaskError {
 class TaskPath {
     hidden static [string[]] $KnownAbsoluteVars = @('.ROOT_DIR', '.TASKFILE_DIR', '.USER_WORKING_DIR')
 
+    # The home directory, taken from the environment like Go's os.UserHomeDir().
+    static [string] Home() {
+        $variable = if ($global:IsWindows) { 'USERPROFILE' } else { 'HOME' }
+        $value = [Environment]::GetEnvironmentVariable($variable)
+        if ([string]::IsNullOrEmpty($value)) { return [Environment]::GetFolderPath('UserProfile') }
+        return $value
+    }
+
     static [string] ExpandHome([string] $path) {
-        if ($path -eq '~') { return [Environment]::GetFolderPath('UserProfile') }
+        if ($path -eq '~') { return [TaskPath]::Home() }
         if ($path.StartsWith('~/') -or $path.StartsWith('~\')) {
-            return [System.IO.Path]::Combine([Environment]::GetFolderPath('UserProfile'), $path.Substring(2))
+            return [System.IO.Path]::Combine([TaskPath]::Home(), $path.Substring(2))
         }
         return $path
+    }
+
+    # Remote Taskfiles (an experiment of go-task) are not implemented.
+    static [void] AssertLocal([string] $path) {
+        if ($path -match '^(https?|git|ssh)://' -or $path -match '^git@') {
+            throw [TaskError]::Create("task: Remote Taskfiles are not supported by PSTaskFile: $path", [TaskError]::TaskfileInvalid)
+        }
     }
 
     # True for absolute paths and for templates that will expand to an absolute path.
@@ -146,12 +161,13 @@ class TaskfileReader {
     static [object] Find([string] $taskfile, [string] $directory, [bool] $global, [string] $workingDirectory) {
         $cwd = if ([string]::IsNullOrEmpty($workingDirectory)) { [Environment]::CurrentDirectory } else { $workingDirectory }
         if ($global) {
-            $userHome = [Environment]::GetFolderPath('UserProfile')
+            $userHome = [TaskPath]::Home()
             $entry = [TaskfileReader]::FindInDirectory($userHome)
             if ([string]::IsNullOrEmpty($entry)) { throw [TaskfileReader]::NotFound($userHome, $false) }
             return [pscustomobject]@{ Entrypoint = $entry; Dir = $userHome }
         }
         if (-not [string]::IsNullOrEmpty($taskfile)) {
+            [TaskPath]::AssertLocal($taskfile)
             $path = [TaskPath]::Full($cwd, $taskfile)
             $entry = ''
             if ([System.IO.Directory]::Exists($path)) { $entry = [TaskfileReader]::FindInDirectory($path) }
@@ -683,6 +699,7 @@ class TaskfileReader {
             $include.Taskfile = [TplEngine]::Expand($include.Taskfile, $data)
             $include.Dir = [TplEngine]::Expand($include.Dir, $data)
 
+            [TaskPath]::AssertLocal($include.Taskfile)
             $target = [TaskPath]::Full($baseDir, $include.Taskfile)
             $entry = ''
             if ([System.IO.Directory]::Exists($target)) { $entry = [TaskfileReader]::FindInDirectory($target) }
