@@ -1,0 +1,56 @@
+# Development tasks for PSTaskFile, run by PSTaskFile itself:
+#
+#   Import-Module ./src/PSTaskFile/PSTaskFile.psd1 -Force
+#   Get-Task
+#   Invoke-Task test
+#
+# The commands are PowerShell (this file is not meant for the Go `task` binary).
+
+version: '3'
+
+vars:
+  MANIFEST: src/PSTaskFile/PSTaskFile.psd1
+
+tasks:
+  default:
+    desc: Run the whole test suite
+    cmds:
+      - task: test
+
+  test:
+    desc: 'Run the Pester tests in a fresh process (extra arguments after --, e.g. -- -Output Detailed)'
+    cmds:
+      - pwsh -NoProfile -File tools/Invoke-Tests.ps1 {{.CLI_ARGS}}
+
+  'test:*':
+    desc: 'Run one test file, e.g. Invoke-Task test:Template'
+    vars:
+      FILE: 'tests/{{index .MATCH 0}}.Tests.ps1'
+    preconditions:
+      - sh: Test-Path '{{.FILE}}'
+        msg: '{{.FILE}} does not exist'
+    cmds:
+      - pwsh -NoProfile -File tools/Invoke-Tests.ps1 -Path '{{.FILE}}' -Output Detailed
+
+  manifest:
+    desc: Validate the module manifest
+    cmds:
+      - Test-ModuleManifest -Path '{{.MANIFEST}}' | Format-List Name, Version, PowerShellVersion, ExportedFunctions
+
+  lint:
+    desc: Analyze the sources with PSScriptAnalyzer
+    preconditions:
+      - sh: '[bool](Get-Module -ListAvailable PSScriptAnalyzer)'
+        msg: 'PSScriptAnalyzer is not installed (Install-Module PSScriptAnalyzer -Scope CurrentUser)'
+    cmds:
+      - Invoke-ScriptAnalyzer -Path src -Recurse -Severity Warning, Error
+
+  loc:
+    desc: Count the lines of the module and of the tests
+    silent: true
+    cmds:
+      - |
+        foreach ($folder in 'src', 'tests') {
+            $lines = (Get-ChildItem $folder -Recurse -Include *.ps1, *.psm1, *.psd1 | Get-Content | Measure-Object -Line).Lines
+            '{0,-6} {1,6} lines' -f $folder, $lines
+        }
