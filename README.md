@@ -82,6 +82,11 @@ The module is not published to the PowerShell Gallery. Import it from a clone, o
 Import-Module ./src/PSTaskFile/PSTaskFile.psd1
 ```
 
+**After updating the module, start a new PowerShell session.** PowerShell cannot replace
+the classes of a module that a session has already loaded, and `Import-Module -Force` does
+not change that. PSTaskFile notices when its files changed since the session loaded them
+and stops with a message saying so, instead of running a mix of old and new code.
+
 Developed and tested on Windows. Nothing in the module is Windows-specific, but it has not
 been run on Linux or macOS yet.
 

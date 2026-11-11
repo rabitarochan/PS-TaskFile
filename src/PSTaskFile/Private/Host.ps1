@@ -44,6 +44,11 @@ function Invoke-TaskEngine {
         [System.Management.Automation.PSCmdlet]$Cmdlet,
         [Parameter(Mandatory)][hashtable]$Request
     )
+    # Classes of two versions in one process do not work together (see PSTaskFile.psm1).
+    if (Test-TaskModuleChanged) {
+        return @{ Ok = $false; Message = "task: $script:ModuleChanged"; Code = 1; ExitStatus = $null; Exception = $null }
+    }
+
     # Assigned in a statement: an `if` expression would enumerate the (empty) collection.
     $sink = $null
     if ($Request.PassThru -and $null -ne $Cmdlet) { $sink = [System.Collections.Concurrent.BlockingCollection[object]]::new() }

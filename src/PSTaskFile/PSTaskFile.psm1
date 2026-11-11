@@ -5,6 +5,51 @@ Set-StrictMode -Version 3.0
 $script:ModuleFile = $PSCommandPath
 $script:ModuleVersion = (Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'PSTaskFile.psd1')).ModuleVersion
 
+# PowerShell cannot replace the classes of a module that a process has already loaded: when
+# the files change (an update, a checkout), newly loaded classes end up calling old ones and
+# fail in obscure ways - Import-Module -Force does not help. The first load in a process
+# records what the files looked like; every later load and every run compares
+# (Invoke-TaskEngine) and asks for a new session instead.
+$script:ModuleChanged = 'the files of the PSTaskFile module changed after it was loaded into this PowerShell process. ' +
+    'PowerShell cannot replace the classes of a loaded module: start a new PowerShell session.'
+
+function Get-TaskModuleStamp {
+    <#
+    .SYNOPSIS
+        Identifies the script files of the module as they are on disk: path, size and write time.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    $root = Split-Path -Parent $script:ModuleFile
+    $files = [System.IO.Directory]::GetFiles($root, '*.ps*1', [System.IO.SearchOption]::AllDirectories)
+    [array]::Sort($files, [StringComparer]::Ordinal)
+    $parts = foreach ($path in $files) {
+        $info = [System.IO.FileInfo]::new($path)
+        '{0}|{1}|{2}' -f $path, $info.Length, $info.LastWriteTimeUtc.Ticks
+    }
+    $parts -join "`n"
+}
+
+function Test-TaskModuleChanged {
+    <#
+    .SYNOPSIS
+        Tells whether the module files differ from the ones this process loaded first.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+    $stamp = Get-TaskModuleStamp
+    $loaded = [AppDomain]::CurrentDomain.GetData('PSTaskFile.ModuleStamp')
+    if ($null -eq $loaded) {
+        [AppDomain]::CurrentDomain.SetData('PSTaskFile.ModuleStamp', $stamp)
+        return $false
+    }
+    return [string]$loaded -cne $stamp
+}
+
+if (Test-TaskModuleChanged) { throw "PSTaskFile: $script:ModuleChanged" }
+
 # Private files are loaded in dependency order: PowerShell classes must be defined before
 # another file's classes reference them.
 $privateOrder = @(

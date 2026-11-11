@@ -28,6 +28,13 @@ pwsh -NoProfile -File tools/Invoke-Tests.ps1 -FullName '*wildcard*'
 pwsh -NoProfile -Command "Import-Module ./src/PSTaskFile/PSTaskFile.psd1; Invoke-Task test:Loader"
 ```
 
+A session that imported the module keeps the classes it loaded first. When the files change
+afterwards, a class in one file resolves the classes of *other* files to the old ones, so new
+and old code get mixed - `Import-Module -Force` does not help. `Test-TaskModuleChanged`
+(`PSTaskFile.psm1`, called on import and by `Invoke-TaskEngine`) detects this and tells the
+user to start a new session. So: never verify a change in a session that has already used
+the module, and do not edit `src/` while the test suite runs.
+
 Requirements: PowerShell 7.4+, Pester 5.5+, the `powershell-yaml` module. If the `task`
 binary is installed, `tests/Compatibility.Tests.ps1` compares against it; otherwise it is
 skipped. PSScriptAnalyzer is optional (`Invoke-Task lint`).
