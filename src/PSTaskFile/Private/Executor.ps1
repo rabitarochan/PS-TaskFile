@@ -14,6 +14,11 @@ class TaskExecutor {
     static [int] $MaximumTaskCall = 1000
     static [int] $MaximumDepth = 100
 
+    # Nested task calls continue on a fresh thread every few levels. An exception that
+    # travels up through many catch/rethrow layers needs a lot of stack on each layer, so an
+    # unbounded chain on one thread could overflow the stack instead of failing cleanly.
+    static [int] $HopInterval = 8
+
     static [object] NewCall([string] $task, [OrderedDictionary] $vars, [bool] $silent, [bool] $indirect, [int] $depth) {
         $callVars = [OrderedDictionary]::new()
         if ($null -ne $vars) { foreach ($key in $vars.get_Keys()) { $callVars[[string]$key] = $vars[$key] } }
@@ -157,7 +162,13 @@ class TaskExecutor {
     # Runs the calls concurrently, each in its own branch. Throws the first failure.
     static [void] RunParallel([hashtable] $ctx, [List[object]] $calls, [bool] $failfast) {
         if ($calls.Count -eq 0) { return }
-        if ($calls.Count -eq 1) { [TaskExecutor]::RunTask($ctx, $calls[0]); return }
+        if ($calls.Count -eq 1) {
+            $only = $calls[0]
+            if ($only.Depth -eq 0 -or ($only.Depth % [TaskExecutor]::HopInterval) -ne 0) {
+                [TaskExecutor]::RunTask($ctx, $only)
+                return
+            }
+        }
 
         $branches = [List[hashtable]]::new()
         $failure = $null
@@ -386,7 +397,9 @@ class TaskExecutor {
         if (-not [string]::IsNullOrEmpty($cmd.Task)) {
             [TaskExecutor]::Release($ctx)
             try {
-                [TaskExecutor]::RunTask($ctx, [TaskExecutor]::NewCall($cmd.Task, $cmd.Vars, $cmd.Silent, $true, $call.Depth + 1))
+                $calls = [List[object]]::new()
+                $calls.Add([TaskExecutor]::NewCall($cmd.Task, $cmd.Vars, $cmd.Silent, $true, $call.Depth + 1))
+                [TaskExecutor]::RunParallel($ctx, $calls, $false)
             }
             catch {
                 if ([TaskScript]::IsStop($_.Exception) -or -not $cmd.IgnoreError) { throw }
