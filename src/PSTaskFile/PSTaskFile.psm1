@@ -13,6 +13,11 @@ $privateOrder = @(
     'Model'
     'Dotenv'
     'Fingerprint'
+    'Runner'
+    'Output'
+    'Compiler'
+    'Executor'
+    'Host'
 )
 $public = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Public') -Filter '*.ps1' -ErrorAction Ignore | Sort-Object Name)
 

@@ -9,7 +9,9 @@
     PowerShellVersion    = '7.4'
     CompatiblePSEditions = @('Core')
     RequiredModules      = @('powershell-yaml')
-    FunctionsToExport    = @()
+    FunctionsToExport    = @(
+        'Invoke-Task'
+    )
     CmdletsToExport      = @()
     VariablesToExport    = @()
     AliasesToExport      = @()
