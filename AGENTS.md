@@ -92,6 +92,12 @@ Parallel work (deps, `-Parallel`, watch) runs in *branches*: additional runspace
   instances of PowerShell classes: both are bound to a runspace. The Taskfile model is
   PSCustomObjects / dictionaries / lists for the same reason. Results cross runspaces as
   hashtables (see `RunBranch`), never as exception objects of our own types.
+- **Taskfile variables reach user code as PowerShell variables through `ScriptVars`.**
+  `TaskCompiler.Compile` collects them (everything `GetVariables` resolves except what comes
+  from the environment; a command adds its loop variables), `TaskScript.SetVariables`
+  defines deep copies in the scope and skips the names PowerShell reserves. Whatever runs
+  user code - commands, conditions, dynamic variables - must pass them on. The cache key of
+  a dynamic variable includes the values of the variables its script refers to.
 - **The environment is process-wide.** Commands set their `env` through `TaskEnv.Enter/Leave`
   (the gate serializes commands that need different values). Never set task environment
   variables any other way. `TaskEngine.Cleanup` restores the snapshot taken at the start.

@@ -10,6 +10,8 @@ runs everything as PowerShell:
   cmdlets and native programs all work as written.
 - Dynamic variables (`sh:`) in `vars` and `env` are PowerShell commands; their output
   becomes the value.
+- The variables of the Taskfile are PowerShell variables as well: `$VERSION` works next to
+  `{{.VERSION}}`.
 - The command is `Invoke-Task`, and the modes of the `task` CLI are separate cmdlets with
   PowerShell naming (`Get-Task`, `Test-Task`, `Watch-Task`, ...).
 
@@ -141,6 +143,49 @@ tasks:
       - defer: Write-Host "finished $tag"
 ```
 
+**Variables are PowerShell variables.** The variables of the Taskfile are defined in the
+scope of the task, so code can use `$NAME` wherever it could use `{{.NAME}}`:
+
+```yaml
+vars:
+  VERSION: 1.2.3
+  FILES: [src/app.txt, docs/read me.md]
+
+tasks:
+  package:
+    cmds:
+      - Compress-Archive -Path $FILES -DestinationPath "dist/app-$VERSION.zip" -Force
+      - for: { var: FILES }
+        cmd: Get-Item $ITEM
+```
+
+```powershell
+Invoke-Task package -Variable @{ VERSION = '2.0.0' }
+```
+
+A template is pasted into the text of the command before PowerShell reads it; a variable
+is passed as a value. `$FILES` is an array, and `$ITEM` stays one argument even with a
+space in it - there is no quoting to get right.
+
+- *Which variables:* global `vars`, the `vars` of includes, of the task and of the call
+  (`task:` with `vars:`), the values given with `-Variable`, the special variables
+  (`$TASK`, `$ROOT_DIR`, `$CLI_ARGS_LIST`, ...), the loop variables (`$ITEM`, `$KEY`, or the
+  name given with `as:`) and `$EXIT_CODE` in deferred commands.
+- *Not environment variables:* what comes from the OS environment, `env:` or `dotenv` is
+  `$env:NAME`, as everywhere in PowerShell.
+- *Where:* in `cmds`, `status`, `preconditions`, `if`, and in `sh:` of `vars` and `env`
+  (there: the variables resolved so far).
+- *Types:* strings, numbers and booleans keep their type, lists are arrays, maps are
+  ordered dictionaries. Every task gets its own copy.
+- *When:* once, when the task starts. A command may assign a new value for the commands
+  that follow; `{{.NAME}}` keeps the value of the Taskfile.
+- *Names:* PowerShell's own variables are left alone. A Taskfile variable named `HOME`,
+  `HOST`, `PWD`, `ERROR`, `ErrorActionPreference`, ... is `{{.HOME}}` only (`-Verbose` tells
+  you), and so is one whose name is not made of letters, digits and `_`. PowerShell does
+  not distinguish `$Name` from `$NAME`: do not rely on variables that differ only in case.
+- *Undefined variables* are `$null`, as usual. List the ones a task cannot do without
+  under `requires:` to fail early instead of running with an empty value.
+
 **The location is reset.** Every command starts in the `dir` of its task (the directory of
 the Taskfile by default), whatever the previous command did.
 
@@ -174,8 +219,9 @@ The literals `true` and `false` are accepted as well, so templates such as
 
 **Dynamic variables.** The output of a `sh:` command is converted to text, one line per
 output object, without the trailing newline - the same shape `task` produces. Variables
-resolved so far are available to the command as environment variables. Each distinct
-command is evaluated once per run.
+resolved so far are available to the command as PowerShell variables and, like in `task`,
+as environment variables. Each distinct command is evaluated once per run and directory;
+a command that uses PowerShell variables once per set of their values.
 
 **Environment.** `env` and `dotenv` values are set while a command of the task runs. As in
 `task` v3, a variable that already exists in the environment wins over the Taskfile; set
@@ -262,6 +308,9 @@ Things to know when coming from `task`:
 
 - A Taskfile written for PSTaskFile is not runnable by `task`, and vice versa, unless its
   commands mean the same in both shells.
+- `$NAME` in a command is a PowerShell variable - a variable of the Taskfile or one the
+  task assigned - not an environment variable as in `sh`. Environment variables are
+  `$env:NAME`.
 - Because tasks run inside your PowerShell process, an assembly or binary module that a
   task loads stays loaded (and its files stay locked) until the session ends. Run such
   steps in a child process: `pwsh -NoProfile -Command ...`.
