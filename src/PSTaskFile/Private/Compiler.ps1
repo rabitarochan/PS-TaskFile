@@ -406,6 +406,19 @@ class TaskCompiler {
             $new.Status = [TaskCompiler]::ReplaceStrings($cache, $task.Status)
         }
 
+        # A task matched through a wildcard is shown under the name it was called with
+        # ("start:*" called as "start:web" -> "start:web"), as go-task does.
+        if ([string]::IsNullOrEmpty($new.Label) -and $task.Task.Contains('*') -and $null -ne $call -and $call.Vars.Contains('MATCH')) {
+            $captured = [TplFn]::ToList($call.Vars['MATCH'].Value)
+            $name = [System.Text.StringBuilder]::new()
+            $next = 0
+            foreach ($character in $task.Task.ToCharArray()) {
+                if ($character -eq '*' -and $next -lt $captured.Count) { [void]$name.Append([string]$captured[$next]); $next++ }
+                else { [void]$name.Append($character) }
+            }
+            $new.Label = $name.ToString()
+        }
+
         if ($evaluateSh) { [TaskCompiler]::ThrowIfError($cache) }
         return $new
     }

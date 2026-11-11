@@ -702,8 +702,45 @@ class TaskEngine {
         return $calls
     }
 
+    # Prints the tasks with a description in the layout of `task --list`.
+    hidden static [void] PrintTaskList([hashtable] $ctx) {
+        $tasks = [TaskEngine]::ListTasks($ctx, @{ Names = @(); All = $false; Sort = 'default'; IncludeStatus = $false })
+        if ($tasks.Count -eq 0) {
+            [TaskLog]::Info($ctx, 'task: No tasks with description available. Try Get-Task -All to list all tasks', 'Yellow')
+            return
+        }
+        [TaskLog]::Info($ctx, 'task: Available tasks for this project:', '')
+        $nameWidth = 0
+        foreach ($task in $tasks) { $nameWidth = [Math]::Max($nameWidth, "* $($task.Name): ".Length) }
+        # The description column is aligned among consecutive tasks that have aliases.
+        $descriptionWidth = [int[]]::new($tasks.Count)
+        $i = 0
+        while ($i -lt $tasks.Count) {
+            if ($tasks[$i].Aliases.Count -eq 0) { $i++; continue }
+            $end = $i
+            $width = 0
+            while ($end -lt $tasks.Count -and $tasks[$end].Aliases.Count -gt 0) { $width = [Math]::Max($width, $tasks[$end].Description.Length); $end++ }
+            for ($k = $i; $k -lt $end; $k++) { $descriptionWidth[$k] = $width + 6 }
+            $i = $end
+        }
+        for ($i = 0; $i -lt $tasks.Count; $i++) {
+            $task = $tasks[$i]
+            $line = "* $($task.Name): ".PadRight($nameWidth + 6)
+            if ($task.Aliases.Count -gt 0) { $line += $task.Description.PadRight($descriptionWidth[$i]) + "(aliases: $([string]::Join(', ', $task.Aliases)))" }
+            else { $line += $task.Description }
+            [TaskLog]::Info($ctx, $line, '')
+        }
+    }
+
     hidden static [object] RunTasks([hashtable] $ctx, [hashtable] $request) {
-        $calls = [TaskEngine]::NewCalls($ctx, $request.Names)
+        $calls = $null
+        try { $calls = [TaskEngine]::NewCalls($ctx, $request.Names) }
+        catch {
+            # Like `task`, show what is available when the name is unknown.
+            $failure = [TaskError]::Unwrap($_.Exception)
+            if ([TaskError]::CodeOf($failure) -eq [TaskError]::TaskNotFound) { try { [TaskEngine]::PrintTaskList($ctx) } catch { } }
+            throw $failure
+        }
         # Tasks marked `watch: true` (or everything with -Watch) are watched after the others ran.
         $regular = [List[object]]::new()
         $watched = [List[object]]::new()
@@ -864,16 +901,20 @@ class TaskEngine {
         return $result
     }
 
+    # Value of a variable as `task --summary` prints it.
     hidden static [string] FormatVar([hashtable] $cache, [object] $var) {
         if ($var.Kind -eq 'sh' -and -not [string]::IsNullOrEmpty($var.Sh)) { return "sh: $([TaskCompiler]::Replace($cache, $var.Sh, $null))" }
-        if ($var.Kind -eq 'ref') { return "ref: $($var.Ref)" }
-        $value = [TaskCompiler]::ReplaceValue($cache, $var.Value, $null)
+        $value = $null
+        if ($var.Kind -eq 'ref') { $value = [TaskCompiler]::ResolveRef($cache, $var.Ref, $null) }
+        else { $value = [TaskCompiler]::ReplaceValue($cache, $var.Value, $null) }
+        $value = [TplFn]::Unwrap($value)
         if ($null -eq $value) { return '""' }
-        if ($value -is [string]) {
-            if ($value.Contains("`n")) { return "|`n    " + $value.Replace("`n", "`n    ") }
-            return "`"$value`""
+        if ($value -is [IDictionary]) {
+            $text = [System.Text.StringBuilder]::new()
+            foreach ($key in $value.get_Keys()) { [void]$text.Append("`n    ${key}: $([TplFn]::Format($value[$key], $false))") }
+            return $text.Append("`n").ToString()
         }
-        return [TplFn]::Format($value, $false)
+        return '"' + [TplFn]::Format($value, $false) + '"'
     }
 
     hidden static [void] AddVarLines([hashtable] $ctx, [List[string]] $lines, [string] $title, [OrderedDictionary] $vars, [hashtable] $cache, [string[]] $skip) {

@@ -186,7 +186,7 @@ tasks:
             '  G: "global"'
             '  DYN: sh: Get-Date'
             '  LOCAL: "local-global"'
-            '  COUNT: 3'
+            '  COUNT: "3"'
             ''
             'env:'
             '  GENV: "genv"'
