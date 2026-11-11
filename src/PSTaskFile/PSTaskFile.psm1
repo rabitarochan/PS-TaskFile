@@ -11,6 +11,8 @@ $privateOrder = @(
     'Yaml'
     'Template'
     'Model'
+    'Dotenv'
+    'Fingerprint'
 )
 $public = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Public') -Filter '*.ps1' -ErrorAction Ignore | Sort-Object Name)
 

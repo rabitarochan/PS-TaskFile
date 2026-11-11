@@ -539,7 +539,7 @@ class TaskfileReader {
         $text = [System.IO.File]::ReadAllText($path)
         $root = $null
         try { $root = [TaskYaml]::Load($text) }
-        catch { throw [TaskfileReader]::Invalid($path, $null, [TaskError]::Unwrap($_.Exception).Message) }
+        catch { throw [TaskError]::Create("task: Failed to parse ${path}:`n$([TaskError]::Unwrap($_.Exception).Message)", [TaskError]::TaskfileInvalid) }
         if ([TaskYaml]::Kind($root) -ne 'map') { throw [TaskfileReader]::Invalid($path, $null, 'the Taskfile must be a YAML map') }
         $document = [TaskYaml]::Map($root)
 

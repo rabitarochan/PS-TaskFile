@@ -99,10 +99,10 @@ Describe 'TaskfileReader.Load' {
             (Import-TestTaskfile $dir).Tasks.Count | Should -Be 0
         }
 
-        It 'reports YAML syntax errors with code 102' {
+        It 'reports YAML syntax errors with code 109' {
             $dir = New-TestTaskfile -Content "version: '3'`ntasks:`n  a: [unclosed"
             { Import-TestTaskfile $dir } | Should -Throw -ExpectedMessage '*Failed to parse*'
-            Get-TaskErrorCode { Import-TestTaskfile $dir } | Should -Be 102
+            Get-TaskErrorCode { Import-TestTaskfile $dir } | Should -Be 109
         }
 
         It 'reads top level settings' {
@@ -421,6 +421,7 @@ tasks:
         It 'rejects a command without cmd, task or defer' {
             $dir = New-TestTaskfile -Content "version: '3'`ntasks:`n  t:`n    cmds:`n      - silent: true"
             { Import-TestTaskfile $dir } | Should -Throw -ExpectedMessage '*invalid keys in command*'
+            Get-TaskErrorCode { Import-TestTaskfile $dir } | Should -Be 102
         }
     }
 
