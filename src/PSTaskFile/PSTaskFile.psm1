@@ -5,10 +5,19 @@ Set-StrictMode -Version 3.0
 $script:ModuleFile = $PSCommandPath
 $script:ModuleVersion = (Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'PSTaskFile.psd1')).ModuleVersion
 
-$private = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Private') -Filter '*.ps1' -ErrorAction Ignore | Sort-Object Name)
+# Private files are loaded in dependency order: PowerShell classes must be defined before
+# another file's classes reference them.
+$privateOrder = @(
+    'Yaml'
+    'Template'
+    'Model'
+)
 $public = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Public') -Filter '*.ps1' -ErrorAction Ignore | Sort-Object Name)
 
-foreach ($file in $private + $public) {
+foreach ($name in $privateOrder) {
+    . (Join-Path $PSScriptRoot 'Private' "$name.ps1")
+}
+foreach ($file in $public) {
     . $file.FullName
 }
 

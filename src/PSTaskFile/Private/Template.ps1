@@ -1268,26 +1268,7 @@ class TplFn {
         finally { $document.Dispose() }
     }
 
-    # Normalizes values produced by ConvertFrom-Yaml into the engine's own collection types.
-    static [object] Normalize([object] $value) {
-        $v = [TplFn]::Unwrap($value)
-        if ($v -is [IDictionary]) {
-            $dict = [OrderedDictionary]::new()
-            foreach ($key in @($v.get_Keys())) { $dict[[string]$key] = [TplFn]::Normalize($v[$key]) }
-            return $dict
-        }
-        if ([TplFn]::IsList($v)) {
-            $list = [List[object]]::new()
-            foreach ($item in $v) { $list.Add([TplFn]::Normalize($item)) }
-            return $list
-        }
-        return $v
-    }
-
-    static [object] FromYaml([string] $text) {
-        $result = ConvertFrom-Yaml -Yaml $text -Ordered
-        return [TplFn]::Normalize($result)
-    }
+    static [object] FromYaml([string] $text) { return [TaskYaml]::Parse($text) }
 
     static [string] ToYaml([object] $value) {
         $text = [string](ConvertTo-Yaml -Data $value)
