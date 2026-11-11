@@ -10,7 +10,12 @@
     CompatiblePSEditions = @('Core')
     RequiredModules      = @('powershell-yaml')
     FunctionsToExport    = @(
+        'Get-Task'
+        'Get-TaskSummary'
         'Invoke-Task'
+        'New-Taskfile'
+        'Test-Task'
+        'Watch-Task'
     )
     CmdletsToExport      = @()
     VariablesToExport    = @()

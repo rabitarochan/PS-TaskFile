@@ -704,9 +704,268 @@ class TaskEngine {
 
     hidden static [object] RunTasks([hashtable] $ctx, [hashtable] $request) {
         $calls = [TaskEngine]::NewCalls($ctx, $request.Names)
-        if ($ctx.Options.Parallel) { [TaskExecutor]::RunParallel($ctx, $calls, [bool]$ctx.Options.Failfast) }
-        else { foreach ($call in $calls) { [TaskExecutor]::RunTask($ctx, $call) } }
+        # Tasks marked `watch: true` (or everything with -Watch) are watched after the others ran.
+        $regular = [List[object]]::new()
+        $watched = [List[object]]::new()
+        foreach ($call in $calls) {
+            if ($ctx.Options.Watch -or [TaskExecutor]::FindTask($ctx, $call).Watch) { $watched.Add($call) } else { $regular.Add($call) }
+        }
+        if ($ctx.Options.Parallel) { [TaskExecutor]::RunParallel($ctx, $regular, [bool]$ctx.Options.Failfast) }
+        else { foreach ($call in $regular) { [TaskExecutor]::RunTask($ctx, $call) } }
+        if ($watched.Count -gt 0) {
+            $ctx.Options.Watch = $true
+            [TaskEngine]::WatchTasks($ctx, $watched)
+        }
         return $null
+    }
+
+    # ---- watch ---------------------------------------------------------------------------------
+
+    hidden static [void] CollectSources([hashtable] $ctx, [string] $name, [HashSet[string]] $visited, [SortedSet[string]] $files) {
+        if (-not $visited.Add($name)) { return }
+        $task = $null
+        try {
+            $call = [TaskExecutor]::NewCall($name, $null, $false, $true, 0)
+            $task = [TaskCompiler]::Compile($ctx, [TaskExecutor]::FindTask($ctx, $call), $call, $false)
+        }
+        catch { return }
+        foreach ($file in [TaskGlob]::Expand($task.Dir, $task.Sources)) { [void]$files.Add($file) }
+        foreach ($dep in $task.Deps) { [TaskEngine]::CollectSources($ctx, $dep.Task, $visited, $files) }
+        foreach ($cmd in $task.Cmds) {
+            if (-not [string]::IsNullOrEmpty($cmd.Task)) { [TaskEngine]::CollectSources($ctx, $cmd.Task, $visited, $files) }
+        }
+    }
+
+    # A fingerprint of every source file of the watched tasks (and of the tasks they use).
+    hidden static [string] WatchSignature([hashtable] $ctx, [List[object]] $calls) {
+        $files = [SortedSet[string]]::new([StringComparer]::Ordinal)
+        $visited = [HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($call in $calls) { [TaskEngine]::CollectSources($ctx, $call.Task, $visited, $files) }
+        $sb = [System.Text.StringBuilder]::new()
+        foreach ($file in $files) {
+            $info = [System.IO.FileInfo]::new($file)
+            if ($info.Exists) { [void]$sb.Append($file).Append('|').Append($info.LastWriteTimeUtc.Ticks).Append('|').Append($info.Length).Append("`n") }
+        }
+        return $sb.ToString()
+    }
+
+    hidden static [int] WatchInterval([hashtable] $ctx) {
+        $text = [string]$ctx.Options.Interval
+        if ([string]::IsNullOrEmpty($text)) { $text = [string]$ctx.Taskfile.Interval }
+        if ([string]::IsNullOrEmpty($text)) { return 500 }
+        $milliseconds = 0
+        try { $milliseconds = [int][TplFn]::ParseDuration($text).TotalMilliseconds }
+        catch { throw [TaskError]::Create("task: invalid interval `"$text`" (use a duration such as 500ms or 2s)", [TaskError]::TaskfileInvalid) }
+        return [Math]::Max($milliseconds, 20)
+    }
+
+    # Runs the calls and returns $true when a source changed before they finished.
+    hidden static [bool] RunWatched([hashtable] $ctx, [List[object]] $calls, [string] $signature, [int] $interval) {
+        foreach ($call in $calls) {
+            $branch = [TaskExecutor]::StartBranch($ctx, [TaskExecutor]::NewCall($call.Task, $call.Vars, $call.Silent, $false, 0))
+            $finished = $false
+            try {
+                while (-not $branch.Handle.IsCompleted) {
+                    Start-Sleep -Milliseconds ([Math]::Min($interval, 100))
+                    if ([TaskEngine]::WatchSignature($ctx, $calls) -cne $signature) { return $true }
+                }
+                $finished = $true
+                $output = $branch.Shell.EndInvoke($branch.Handle)
+                if ($output.Count -gt 0 -and -not $output[0].Ok) { [TaskLog]::Info($ctx, [string]$output[0].Message, 'Red') }
+            }
+            finally {
+                if (-not $finished) { try { $branch.Shell.Stop() } catch { } }
+                $branch.Shell.Dispose()
+                $branch.Runspace.Dispose()
+            }
+        }
+        return $false
+    }
+
+    # Runs the tasks, then again whenever one of their sources changes. Only stops when the
+    # caller is stopped (Ctrl+C).
+    hidden static [void] WatchTasks([hashtable] $ctx, [List[object]] $calls) {
+        $names = [List[string]]::new()
+        foreach ($call in $calls) { $names.Add($call.Task) }
+        $interval = [TaskEngine]::WatchInterval($ctx)
+        [TaskLog]::Info($ctx, "task: Started watching for tasks: $([string]::Join(', ', $names))", 'Green')
+        while ($true) {
+            $signature = [TaskEngine]::WatchSignature($ctx, $calls)
+            foreach ($signal in $ctx.ExecutionHashes.get_Values()) { try { $signal.Dispose() } catch { } }
+            $ctx.ExecutionHashes.Clear()
+            $ctx.CallCounts.Clear()
+            $ctx.DynamicCache.Clear()
+            if ([TaskEngine]::RunWatched($ctx, $calls, $signature, $interval)) { continue }
+            while ([TaskEngine]::WatchSignature($ctx, $calls) -ceq $signature) { Start-Sleep -Milliseconds $interval }
+        }
+    }
+
+    # ---- listing, summary and status -------------------------------------------------------------
+
+    hidden static [bool] IsNamespaced([string] $name) { return $name.Contains(':') }
+
+    # Tasks for Get-Task: never internal ones; without -All only tasks with a description
+    # (unless they were asked for by name).
+    hidden static [object] ListTasks([hashtable] $ctx, [hashtable] $request) {
+        $patterns = [List[System.Management.Automation.WildcardPattern]]::new()
+        foreach ($name in @($request.Names)) {
+            if (-not [string]::IsNullOrEmpty($name)) { $patterns.Add([System.Management.Automation.WildcardPattern]::new([string]$name, 'IgnoreCase')) }
+        }
+        $selected = [List[object]]::new()
+        foreach ($task in $ctx.Taskfile.Tasks.get_Values()) {
+            if ($task.Internal) { continue }
+            if ($patterns.Count -gt 0) {
+                $matched = $false
+                foreach ($pattern in $patterns) {
+                    foreach ($candidate in @($task.Task) + @($task.Aliases)) { if ($pattern.IsMatch($candidate)) { $matched = $true } }
+                }
+                if (-not $matched) { continue }
+            }
+            elseif (-not $request.All -and [string]::IsNullOrEmpty($task.Desc)) { continue }
+            $selected.Add($task)
+        }
+
+        $sort = [string]$request.Sort
+        if ($sort -ne 'none') {
+            $names = [List[string]]::new()
+            foreach ($task in $selected) { $names.Add($task.Task) }
+            $array = $names.ToArray()
+            [Array]::Sort($array, [StringComparer]::Ordinal)
+            $ordered = [List[object]]::new()
+            if ($sort -ne 'alphanumeric') {
+                # default: tasks of the root Taskfile first, then the namespaced ones
+                foreach ($name in $array) { if (-not [TaskEngine]::IsNamespaced($name)) { $ordered.Add($ctx.Taskfile.Tasks[$name]) } }
+                foreach ($name in $array) { if ([TaskEngine]::IsNamespaced($name)) { $ordered.Add($ctx.Taskfile.Tasks[$name]) } }
+            }
+            else { foreach ($name in $array) { $ordered.Add($ctx.Taskfile.Tasks[$name]) } }
+            $selected = $ordered
+        }
+
+        # Status checks for a listing never update the stored fingerprints.
+        if ($request.IncludeStatus) { $ctx.Options.Dry = $true }
+        $result = [List[object]]::new()
+        foreach ($task in $selected) {
+            $call = [TaskExecutor]::NewCall($task.Task, $null, $false, $false, 0)
+            $compiled = [TaskCompiler]::Compile($ctx, $task, $call, $false)
+            $upToDate = $null
+            if ($request.IncludeStatus) {
+                try { $upToDate = [TaskExecutor]::IsUpToDate($ctx, $compiled) } catch { $upToDate = $false }
+            }
+            $result.Add([pscustomobject]@{
+                    Name        = $task.Task
+                    Label       = $compiled.Label
+                    Description = $compiled.Desc
+                    Summary     = $compiled.Summary
+                    Aliases     = $task.Aliases
+                    UpToDate    = $upToDate
+                    Location    = [pscustomobject]@{ Taskfile = $task.Location.Taskfile; Line = $task.Location.Line; Column = $task.Location.Column }
+                })
+        }
+        return $result
+    }
+
+    hidden static [string] FormatVar([hashtable] $cache, [object] $var) {
+        if ($var.Kind -eq 'sh' -and -not [string]::IsNullOrEmpty($var.Sh)) { return "sh: $([TaskCompiler]::Replace($cache, $var.Sh, $null))" }
+        if ($var.Kind -eq 'ref') { return "ref: $($var.Ref)" }
+        $value = [TaskCompiler]::ReplaceValue($cache, $var.Value, $null)
+        if ($null -eq $value) { return '""' }
+        if ($value -is [string]) {
+            if ($value.Contains("`n")) { return "|`n    " + $value.Replace("`n", "`n    ") }
+            return "`"$value`""
+        }
+        return [TplFn]::Format($value, $false)
+    }
+
+    hidden static [void] AddVarLines([hashtable] $ctx, [List[string]] $lines, [string] $title, [OrderedDictionary] $vars, [hashtable] $cache, [string[]] $skip) {
+        $entries = [List[string]]::new()
+        foreach ($key in $vars.get_Keys()) {
+            $name = [string]$key
+            if ($ctx.BaseEnv.ContainsKey($name) -or $skip -ccontains $name) { continue }
+            $entries.Add("  ${name}: $([TaskEngine]::FormatVar($cache, $vars[$key]))")
+        }
+        if ($entries.Count -eq 0) { return }
+        $lines.Add('')
+        $lines.Add("${title}:")
+        foreach ($entry in $entries) { foreach ($line in $entry.Split("`n")) { $lines.Add($line) } }
+    }
+
+    # The text of `task --summary` for each task.
+    hidden static [object] Summarize([hashtable] $ctx, [hashtable] $request) {
+        $lines = [List[string]]::new()
+        $calls = [TaskEngine]::NewCalls($ctx, $request.Names)
+        $cliVars = @('CLI_ARGS', 'CLI_ARGS_LIST', 'CLI_FORCE', 'CLI_SILENT', 'CLI_VERBOSE', 'CLI_OFFLINE', 'CLI_ASSUME_YES')
+        for ($i = 0; $i -lt $calls.Count; $i++) {
+            if ($i -gt 0) { $lines.Add(''); $lines.Add('') }
+            $call = $calls[$i]
+            $original = [TaskExecutor]::FindTask($ctx, $call)
+            $task = [TaskCompiler]::Compile($ctx, $original, $call, $false)
+            $cache = [TaskCompiler]::NewCache($task.Vars)
+
+            $lines.Add("task: $([TaskExecutor]::TaskName($task))")
+            $lines.Add('')
+            if (-not [string]::IsNullOrEmpty($task.Summary)) {
+                $summary = $task.Summary.Replace("`r`n", "`n").Split("`n")
+                for ($k = 0; $k -lt $summary.Count; $k++) {
+                    if ($k + 1 -lt $summary.Count -or $summary[$k].Length -gt 0) { $lines.Add($summary[$k]) }
+                }
+            }
+            elseif (-not [string]::IsNullOrEmpty($task.Desc)) { $lines.Add($task.Desc) }
+            else { $lines.Add('(task does not have description or summary)') }
+
+            $vars = [OrderedDictionary]::new()
+            foreach ($key in $ctx.Taskfile.Vars.get_Keys()) { $vars[[string]$key] = $ctx.Taskfile.Vars[$key] }
+            foreach ($key in $original.Vars.get_Keys()) { $vars[[string]$key] = $original.Vars[$key] }
+            $environment = [OrderedDictionary]::new()
+            foreach ($key in $ctx.Taskfile.Env.get_Keys()) { $environment[[string]$key] = $ctx.Taskfile.Env[$key] }
+            foreach ($key in $original.Env.get_Keys()) { $environment[[string]$key] = $original.Env[$key] }
+            $environmentNames = [List[string]]::new()
+            foreach ($key in $environment.get_Keys()) { $environmentNames.Add([string]$key) }
+            [TaskEngine]::AddVarLines($ctx, $lines, 'vars', $vars, $cache, [string[]]($cliVars + $environmentNames.ToArray()))
+            [TaskEngine]::AddVarLines($ctx, $lines, 'env', $environment, $cache, [string[]]@())
+
+            if ($task.Requires.Count -gt 0) {
+                $lines.Add('')
+                $lines.Add('requires:')
+                $lines.Add('  vars:')
+                foreach ($required in $task.Requires) {
+                    if ($null -ne $required.Enum -and $required.Enum.Count -gt 0) {
+                        $lines.Add("    - $($required.Name):")
+                        $lines.Add('        enum:')
+                        foreach ($value in $required.Enum) { $lines.Add("          - $value") }
+                    }
+                    else { $lines.Add("    - $($required.Name)") }
+                }
+            }
+            if ($task.Deps.Count -gt 0) {
+                $lines.Add('')
+                $lines.Add('dependencies:')
+                foreach ($dep in $task.Deps) { $lines.Add(" - $($dep.Task)") }
+            }
+            if ($task.Aliases.Count -gt 0) {
+                $lines.Add('')
+                $lines.Add('aliases:')
+                foreach ($alias in $task.Aliases) { $lines.Add(" - $alias") }
+            }
+            if ($task.Cmds.Count -gt 0) {
+                $lines.Add('')
+                $lines.Add('commands:')
+                foreach ($cmd in $task.Cmds) {
+                    if (-not [string]::IsNullOrEmpty($cmd.Cmd)) { $lines.Add(" - $($cmd.Cmd)") } else { $lines.Add(" - Task: $($cmd.Task)") }
+                }
+            }
+        }
+        return $lines
+    }
+
+    # Whether each named task is up to date (Test-Task). Never updates the stored state.
+    hidden static [object] Status([hashtable] $ctx, [hashtable] $request) {
+        $ctx.Options.Dry = $true
+        $result = [List[object]]::new()
+        foreach ($call in [TaskEngine]::NewCalls($ctx, $request.Names)) {
+            $task = [TaskCompiler]::Compile($ctx, [TaskExecutor]::FindTask($ctx, $call), $call, $true)
+            $result.Add([TaskExecutor]::IsUpToDate($ctx, $task))
+        }
+        return $result
     }
 
     # Entry point of the engine runspace. Never throws for task failures: the outcome is
@@ -718,6 +977,9 @@ class TaskEngine {
             $data = $null
             switch ([string]$request.Action) {
                 'Run' { $data = [TaskEngine]::RunTasks($ctx, $request) }
+                'List' { $data = [TaskEngine]::ListTasks($ctx, $request) }
+                'Summary' { $data = [TaskEngine]::Summarize($ctx, $request) }
+                'Status' { $data = [TaskEngine]::Status($ctx, $request) }
                 default { throw [TaskError]::Create("task: unknown action `"$($request.Action)`"", [TaskError]::Unknown) }
             }
             return @{ Ok = $true; Data = $data }

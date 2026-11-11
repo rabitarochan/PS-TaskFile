@@ -40,12 +40,13 @@ function Invoke-TaskEngine {
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
-        [Parameter(Mandatory)][System.Management.Automation.PSCmdlet]$Cmdlet,
+        # The calling cmdlet; only needed for -PassThru runs (it re-emits the queued output).
+        [System.Management.Automation.PSCmdlet]$Cmdlet,
         [Parameter(Mandatory)][hashtable]$Request
     )
     # Assigned in a statement: an `if` expression would enumerate the (empty) collection.
     $sink = $null
-    if ($Request.PassThru) { $sink = [System.Collections.Concurrent.BlockingCollection[object]]::new() }
+    if ($Request.PassThru -and $null -ne $Cmdlet) { $sink = [System.Collections.Concurrent.BlockingCollection[object]]::new() }
     $Request.Sink = $sink
     $Request.ModuleFile = $script:ModuleFile
     $Request.Version = $script:ModuleVersion
@@ -132,4 +133,85 @@ function Complete-TaskResult {
     $exception.Data['TaskExitCode'] = $exitCode
     $record = [System.Management.Automation.ErrorRecord]::new($exception, $errorId, [System.Management.Automation.ErrorCategory]$category, $null)
     $Cmdlet.ThrowTerminatingError($record)
+}
+
+function New-TaskEngineRequest {
+    <#
+    .SYNOPSIS
+        Builds the request table for Invoke-TaskEngine with every option defaulted.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)][string]$Action,
+        [string[]]$Name,
+        [string]$Taskfile,
+        [string]$Directory,
+        [switch]$Global,
+        # Overrides for the engine options (Force, Silent, Dry, ...).
+        [hashtable]$Options = @{},
+        # Additional request entries (PassThru, Variables, All, ...).
+        [hashtable]$Extra = @{}
+    )
+    $request = @{
+        Action           = $Action
+        Names            = @($Name | Where-Object { -not [string]::IsNullOrEmpty($_) })
+        ArgumentList     = @()
+        Variables        = $null
+        Taskfile         = $Taskfile
+        Directory        = $Directory
+        Global           = $Global.IsPresent
+        WorkingDirectory = $PWD.ProviderPath
+        PassThru         = $false
+        Options          = @{
+            Force                = $false
+            ForceAll             = $false
+            Silent               = $false
+            Verbose              = $false
+            Dry                  = $false
+            Parallel             = $false
+            Concurrency          = 0
+            Output               = ''
+            OutputGroupBegin     = ''
+            OutputGroupEnd       = ''
+            OutputGroupErrorOnly = $false
+            AssumeYes            = $false
+            Failfast             = $false
+            Color                = [string]::IsNullOrEmpty($env:NO_COLOR)
+            Watch                = $false
+            Interval             = ''
+        }
+    }
+    foreach ($key in $Options.Keys) { $request.Options[$key] = $Options[$key] }
+    foreach ($key in $Extra.Keys) { $request[$key] = $Extra[$key] }
+    $request
+}
+
+function Get-TaskCompletion {
+    <#
+    .SYNOPSIS
+        Argument completer for the -Name parameter: the runnable tasks of the Taskfile.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()][string]$WordToComplete,
+        [System.Collections.IDictionary]$BoundParameters
+    )
+    $location = @{}
+    foreach ($key in 'Taskfile', 'Directory', 'Global') {
+        if ($null -ne $BoundParameters -and $BoundParameters.Contains($key)) { $location[$key] = $BoundParameters[$key] }
+    }
+    $prefix = $WordToComplete.Trim('"', "'")
+    try {
+        $request = New-TaskEngineRequest -Action List @location -Extra @{ All = $true; Sort = 'alphanumeric'; IncludeStatus = $false }
+        $result = Invoke-TaskEngine -Request $request
+    }
+    catch { return }
+    if (-not $result.Ok) { return }
+    foreach ($task in $result.Data) {
+        if ($task.Name -notlike "$prefix*") { continue }
+        $text = if ($task.Name -match '[\s''"`$;|&(){}<>,#]') { "'" + $task.Name.Replace("'", "''") + "'" } else { $task.Name }
+        $toolTip = if ([string]::IsNullOrEmpty($task.Description)) { $task.Name } else { $task.Description }
+        [System.Management.Automation.CompletionResult]::new($text, $task.Name, 'ParameterValue', $toolTip)
+    }
 }

@@ -51,6 +51,10 @@ function Invoke-Task {
         Sets $LASTEXITCODE to the exit code of the failing command instead of 201.
     .PARAMETER FailFast
         Stops the other tasks when one of the tasks running in parallel fails.
+    .PARAMETER Watch
+        Runs the tasks again whenever one of their sources changes (see Watch-Task).
+    .PARAMETER Interval
+        The polling interval for -Watch as a duration such as 500ms or 2s.
     .PARAMETER NoColor
         Disables colored engine messages (also disabled by the NO_COLOR environment variable).
     .PARAMETER PassThru
@@ -68,6 +72,8 @@ function Invoke-Task {
     .LINK
         https://taskfile.dev
     #>
+    # -WhatIf is the dry run of the engine (`task --dry`): the commands are printed, not run.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSShouldProcess', '', Justification = 'WhatIf is forwarded to the engine as a dry run.')]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Position = 0, ValueFromPipeline, ValueFromPipelineByPropertyName)]
@@ -120,6 +126,12 @@ function Invoke-Task {
 
         [switch]$FailFast,
 
+        [Alias('w')]
+        [switch]$Watch,
+
+        [Alias('I')]
+        [string]$Interval,
+
         [switch]$NoColor,
 
         [switch]$PassThru
@@ -134,34 +146,25 @@ function Invoke-Task {
     }
 
     end {
-        $request = @{
-            Action           = 'Run'
-            Names            = $names.ToArray()
-            ArgumentList     = $ArgumentList
-            Variables        = $Variable
-            Taskfile         = $Taskfile
-            Directory        = $Directory
-            Global           = $Global.IsPresent
-            WorkingDirectory = $PWD.ProviderPath
-            PassThru         = $PassThru.IsPresent
-            Options          = @{
-                Force                = $Force.IsPresent
-                ForceAll             = $false
-                Silent               = $Silent.IsPresent
-                Verbose              = $VerbosePreference -eq 'Continue'
-                Dry                  = [bool]$WhatIfPreference
-                Parallel             = $Parallel.IsPresent
-                Concurrency          = $Concurrency
-                Output               = $Output
-                OutputGroupBegin     = $OutputGroupBegin
-                OutputGroupEnd       = $OutputGroupEnd
-                OutputGroupErrorOnly = $OutputGroupErrorOnly.IsPresent
-                AssumeYes            = $AssumeYes.IsPresent
-                Failfast             = $FailFast.IsPresent
-                Color                = -not $NoColor -and [string]::IsNullOrEmpty($env:NO_COLOR)
-                Watch                = $false
-            }
+        $options = @{
+            Force                = $Force.IsPresent
+            Silent               = $Silent.IsPresent
+            Verbose              = $VerbosePreference -eq 'Continue'
+            Dry                  = [bool]$WhatIfPreference
+            Parallel             = $Parallel.IsPresent
+            Concurrency          = $Concurrency
+            Output               = $Output
+            OutputGroupBegin     = $OutputGroupBegin
+            OutputGroupEnd       = $OutputGroupEnd
+            OutputGroupErrorOnly = $OutputGroupErrorOnly.IsPresent
+            AssumeYes            = $AssumeYes.IsPresent
+            Failfast             = $FailFast.IsPresent
+            Color                = -not $NoColor -and [string]::IsNullOrEmpty($env:NO_COLOR)
+            Watch                = $Watch.IsPresent
+            Interval             = $Interval
         }
+        $extra = @{ ArgumentList = $ArgumentList; Variables = $Variable; PassThru = $PassThru.IsPresent }
+        $request = New-TaskEngineRequest -Action Run -Name $names -Taskfile $Taskfile -Directory $Directory -Global:$Global -Options $options -Extra $extra
         $result = Invoke-TaskEngine -Cmdlet $PSCmdlet -Request $request
         Complete-TaskResult -Cmdlet $PSCmdlet -Result $result -PassExitCode:$ExitCode
     }

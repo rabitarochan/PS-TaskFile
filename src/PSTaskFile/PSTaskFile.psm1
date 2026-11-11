@@ -28,4 +28,13 @@ foreach ($file in $public) {
     . $file.FullName
 }
 
+# Get-Task objects are shown as a compact table by default.
+Update-TypeData -TypeName 'PSTaskFile.TaskInfo' -DefaultDisplayPropertySet Name, Description, Aliases -Force
+
+# Tab completion of task names.
+Register-ArgumentCompleter -CommandName Invoke-Task, Watch-Task, Get-Task, Get-TaskSummary, Test-Task -ParameterName Name -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    Get-TaskCompletion -WordToComplete $wordToComplete -BoundParameters $fakeBoundParameters
+}
+
 Export-ModuleMember -Function @($public | ForEach-Object BaseName)
