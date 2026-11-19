@@ -105,6 +105,12 @@ Describe 'TaskfileReader.Load' {
             Get-TaskErrorCode { Import-TestTaskfile $dir } | Should -Be 109
         }
 
+        It 'accepts only the group style in mapping form' {
+            $dir = New-TestTaskfile -Content "version: '3'`noutput:`n  prefixed:`n    color: true`ntasks: {}"
+            { Import-TestTaskfile $dir } | Should -Throw -ExpectedMessage '*output style must have the "group" key when in mapping form*'
+            Get-TaskErrorCode { Import-TestTaskfile $dir } | Should -Be 102
+        }
+
         It 'reads top level settings' {
             $dir = New-TestTaskfile -Content @'
 version: '3'

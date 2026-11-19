@@ -489,26 +489,22 @@ class TaskfileReader {
 
     hidden static [object] ParseOutput([object] $node, [string] $path) {
         $output = [pscustomobject]@{
-            Name     = ''
-            Group    = [pscustomobject]@{ Begin = ''; End = ''; ErrorOnly = $false }
-            Prefixed = [pscustomobject]@{ Color = $false }
+            Name  = ''
+            Group = [pscustomobject]@{ Begin = ''; End = ''; ErrorOnly = $false }
         }
         $kind = [TaskYaml]::Kind($node)
         if ($kind -eq 'null') { return $output }
         if ($kind -eq 'map') {
+            # Only the group style has settings; the others are given by name.
             $map = [TaskYaml]::Map($node)
-            if ($map.Contains('group')) {
-                $group = [TaskYaml]::Map($map['group'])
-                $output.Name = 'group'
-                $output.Group.Begin = [TaskYaml]::Str([TaskfileReader]::Get($group, 'begin'))
-                $output.Group.End = [TaskYaml]::Str([TaskfileReader]::Get($group, 'end'))
-                $output.Group.ErrorOnly = [TaskYaml]::Bool([TaskfileReader]::Get($group, 'error_only'))
+            if (-not $map.Contains('group')) {
+                throw [TaskfileReader]::Invalid($path, $node, 'output style must have the "group" key when in mapping form')
             }
-            elseif ($map.Contains('prefixed')) {
-                $output.Name = 'prefixed'
-                $output.Prefixed.Color = [TaskYaml]::Bool([TaskfileReader]::Get([TaskYaml]::Map($map['prefixed']), 'color'))
-            }
-            else { throw [TaskfileReader]::Invalid($path, $node, 'output style must be one of interleaved, group or prefixed') }
+            $group = [TaskYaml]::Map($map['group'])
+            $output.Name = 'group'
+            $output.Group.Begin = [TaskYaml]::Str([TaskfileReader]::Get($group, 'begin'))
+            $output.Group.End = [TaskYaml]::Str([TaskfileReader]::Get($group, 'end'))
+            $output.Group.ErrorOnly = [TaskYaml]::Bool([TaskfileReader]::Get($group, 'error_only'))
             return $output
         }
         $name = [TaskYaml]::Str($node)
