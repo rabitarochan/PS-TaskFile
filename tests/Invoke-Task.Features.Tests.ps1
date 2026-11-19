@@ -222,6 +222,28 @@ tasks:
       - Write-Output good
       - cmd: exit 2
         ignore_error: true
+  short:
+    silent: true
+    cmds:
+      - Write-Output from-short
+  much-longer:
+    silent: true
+    cmds:
+      - Write-Output from-longer
+  renamed:
+    prefix: api
+    silent: true
+    cmds:
+      - Write-Output from-renamed
+  aligned:
+    deps: [short, much-longer]
+  aligned-prefix:
+    deps: [short, renamed]
+  widens:
+    cmds:
+      - task: short
+      - task: much-longer
+      - task: short
 '@
         $script:GroupDir = New-TestTaskfile @'
 version: '3'
@@ -241,24 +263,44 @@ tasks:
         $result = Invoke-TestTask $script:Dir lines -With @{ Output = 'prefixed' }
         $result.Lines | Should -Be @(
             'task: [lines] Write-Output one; Write-Host two'
-            '[lines] one'
-            '[lines] two'
+            '[lines] | one'
+            '[lines] | two'
             "task: [lines] [pscustomobject]@{ Name = 'obj' } | Format-List"
-            '[lines] '
-            '[lines] Name : obj'
-            '[lines] '
+            '[lines] |'
+            '[lines] | Name : obj'
+            '[lines] |'
         )
     }
 
     It 'uses the prefix of the task' {
-        (Invoke-TestTask $script:Dir custom-prefix -With @{ Output = 'prefixed' }).Lines | Should -Be @('[p-custom-prefix] line')
+        (Invoke-TestTask $script:Dir custom-prefix -With @{ Output = 'prefixed' }).Lines | Should -Be @('[p-custom-prefix] | line')
     }
 
     It 'prefixes error output as well' {
         $result = Invoke-TestTask $script:Dir fails -With @{ Output = 'prefixed' }
-        $result.Lines[0] | Should -Be '[fails] before'
-        ($result.Lines | Select-Object -Skip 1) -join ' ' | Should -Match '^\[fails\] .*broken'
+        $result.Lines[0] | Should -Be '[fails] | before'
+        ($result.Lines | Select-Object -Skip 1) -join ' ' | Should -Match '^\[fails\] \| .*broken'
         $result.Error.Exception.Message | Should -Be 'task: Failed to run task "fails": broken'
+    }
+
+    It 'aligns the prefixes of tasks that run in parallel' {
+        $result = Invoke-TestTask $script:Dir aligned -With @{ Output = 'prefixed' }
+        $result.Lines | Sort-Object | Should -Be @('[much-longer] | from-longer', '[short]       | from-short')
+    }
+
+    It 'aligns to the declared prefix of a task, not to its name' {
+        $result = Invoke-TestTask $script:Dir aligned-prefix -With @{ Output = 'prefixed' }
+        $result.Lines | Sort-Object | Should -Be @('[api]   | from-renamed', '[short] | from-short')
+    }
+
+    It 'widens the prefix column when a longer prefix shows up' {
+        $result = Invoke-TestTask $script:Dir widens -With @{ Output = 'prefixed'; Silent = $true }
+        $result.Lines | Should -Be @('[short] | from-short', '[much-longer] | from-longer', '[short]       | from-short')
+    }
+
+    It 'neither colours nor wraps the lines it returns with -PassThru' {
+        $long = New-TestTaskfile "version: '3'`ntasks:`n  default:`n    silent: true`n    cmds:`n      - Write-Output ('x' * 400)"
+        (Invoke-TestTask $long -With @{ Output = 'prefixed' }).Lines | Should -Be @('[default] | ' + ('x' * 400))
     }
 
     It 'groups the output of each command' {
@@ -417,7 +459,7 @@ tasks:
 
     It 'supports the prefixed and group styles on the host' {
         $prefixed = Invoke-InChildProcess "Invoke-Task -Directory '$script:Dir' -Silent -Output prefixed"
-        $prefixed.Lines | Should -Be @('[default] from-pipeline', '[default] from-host', '[default]', '[default] row      1', '[default]', '[default] from-native')
+        $prefixed.Lines | Should -Be @('[default] | from-pipeline', '[default] | from-host', '[default] |', '[default] | row      1', '[default] |', '[default] | from-native')
         $grouped = Invoke-InChildProcess "Invoke-Task -Directory '$script:Dir' -Silent -Output group -OutputGroupBegin '--begin'"
         $grouped.Lines | Should -Be @('--begin', 'from-pipeline', '--begin', 'from-host', '--begin', 'row      1', '--begin', 'from-native')
     }

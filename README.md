@@ -255,6 +255,22 @@ Invoke-Task build -PassThru *> build.log
 
 The `prefixed` and `group` output styles capture the output as text lines in both modes.
 
+With `output: prefixed` every line starts with the prefix of its task. The prefixes are
+aligned; on a terminal every task has its own color, and a line that is wider than the
+window continues below its own text instead of below the prefix:
+
+```text
+[api]    | listening on http://localhost:5000
+[worker] | a line that does not fit into the window continues in the next row, next to
+         | the same bar
+[api]    | GET /health 200
+```
+
+The prefix column is as wide as the widest prefix seen so far. Tasks that start together
+(`deps`, `-Parallel`) are aligned from their first line on. Colors and wrapping are left
+out when the output is redirected and with `-PassThru`; `-NoColor` and `NO_COLOR` turn the
+colors off.
+
 **Failures and exit codes.** A failed run throws a terminating error and sets
 `$LASTEXITCODE` to the code `task` would exit with:
 
@@ -322,6 +338,8 @@ Things to know when coming from `task`:
 - `$NAME` in a command is a PowerShell variable - a variable of the Taskfile or one the
   task assigned - not an environment variable as in `sh`. Environment variables are
   `$env:NAME`.
+- `output: prefixed` looks different: `task` writes `[name] text`, PS-TaskFile writes
+  `[name] | text` with aligned prefixes (see "Output" above).
 - Because tasks run inside your PowerShell process, an assembly or binary module that a
   task loads stays loaded (and its files stay locked) until the session ends. Run such
   steps in a child process: `pwsh -NoProfile -Command ...`.

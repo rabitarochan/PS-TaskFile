@@ -57,7 +57,8 @@ function Invoke-Task {
     .PARAMETER Interval
         The polling interval for -Watch as a duration such as 500ms or 2s.
     .PARAMETER NoColor
-        Disables colored engine messages (also disabled by the NO_COLOR environment variable).
+        Disables the colors of the engine messages and of the task prefixes (also disabled by
+        the NO_COLOR environment variable).
     .PARAMETER PassThru
         Emits the output of the tasks on the pipeline and streams instead of the host.
     .EXAMPLE

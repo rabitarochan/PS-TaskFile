@@ -122,10 +122,9 @@ param($scope, $code, $sink)
 
     hidden static [string] $LineScript = @'
 param($scope, $code, $emit)
-. $scope $code *>&1 | Out-String -Stream | ForEach-Object {
-    if ($null -ne $emit.Buffer) { $emit.Buffer.Add($_) }
-    elseif ($null -ne $emit.Sink) { $emit.Sink.Add([System.Collections.DictionaryEntry]::new('o', $emit.Prefix + $_)) }
-    else { $emit.UI.WriteLine($emit.Prefix + $_) }
+$format = $emit.Format
+. $scope $code *>&1 | Out-String @format | ForEach-Object {
+    if ($null -ne $emit.Buffer) { $emit.Buffer.Add($_) } else { $emit.Writer.WriteLine($_) }
 }
 '@
 
@@ -236,7 +235,9 @@ param($scope, $code, $emit)
     # $mode   host    - render everything on the host (Out-Default)
     #         capture - return the success output in Output
     #         stream  - send every record (all streams) to $target, a sink collection
-    #         lines   - send formatted text lines to $target (@{ Buffer; Sink; UI; Prefix })
+    #         lines   - send formatted text lines to $target: @{ Buffer; Writer; Format }, where
+    #                   Buffer is a list (group style) or Writer a TaskLineWriter (prefixed style),
+    #                   and Format holds the parameters of Out-String
     #
     # Returns ExitCode (0 = success), Message (failure reason), Error (ErrorRecord) and Output.
     # A command fails when it throws a terminating error, calls `exit N` with N != 0, or

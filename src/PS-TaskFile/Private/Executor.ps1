@@ -159,9 +159,27 @@ class TaskExecutor {
         return @{ Shell = $shell; Runspace = $runspace; Handle = $shell.BeginInvoke(); Done = $false }
     }
 
+    # `output: prefixed`: tasks that are about to start make room for their prefixes first, so
+    # that their lines are aligned from the first one on. A prefix that is a template is known
+    # only once its task is compiled; it widens the column then.
+    hidden static [void] ReservePrefixes([hashtable] $ctx, [List[object]] $calls) {
+        if ([string]$ctx.Output.Name -ne 'prefixed') { return }
+        $tasks = $ctx.Taskfile.Tasks
+        foreach ($call in $calls) {
+            $name = [string]$call.Task
+            if ($tasks.Contains($name)) {
+                $declared = [string]$tasks[$name].Prefix
+                if ($declared.Contains('{{')) { continue }
+                if ($declared.Length -gt 0) { $name = $declared }
+            }
+            [TaskPrefix]::Reserve($ctx.Prefixes, $name)
+        }
+    }
+
     # Runs the calls concurrently, each in its own branch. Throws the first failure.
     static [void] RunParallel([hashtable] $ctx, [List[object]] $calls, [bool] $failfast) {
         if ($calls.Count -eq 0) { return }
+        [TaskExecutor]::ReservePrefixes($ctx, $calls)
         if ($calls.Count -eq 1) {
             $only = $calls[0]
             if ($only.Depth -eq 0 -or ($only.Depth % [TaskExecutor]::HopInterval) -ne 0) {
@@ -346,11 +364,12 @@ class TaskExecutor {
         if ($style -eq 'group') {
             $buffer = [List[string]]::new()
             $mode = 'lines'
-            $target = @{ Buffer = $buffer; Sink = $null; UI = $null; Prefix = '' }
+            $target = @{ Buffer = $buffer; Writer = $null; Format = @{ Stream = $true } }
         }
         elseif ($style -eq 'prefixed') {
             $mode = 'lines'
-            $target = @{ Buffer = $null; Sink = $ctx.Sink; UI = $global:Host.UI; Prefix = "[$($task.Prefix)] " }
+            $writer = [TaskLineWriter]::new($ctx, [string]$task.Prefix)
+            $target = @{ Buffer = $null; Writer = $writer; Format = $writer.FormatOptions() }
         }
         elseif ($null -ne $ctx.Sink) {
             $mode = 'stream'
@@ -385,7 +404,7 @@ class TaskExecutor {
             if ($mode -eq 'lines') {
                 $lines = @($result.Error | Out-String -Stream | Where-Object { $_ -ne '' })
                 if ($null -ne $buffer) { $buffer.AddRange([string[]]$lines) }
-                else { [TaskLog]::Lines($ctx, @($lines | ForEach-Object { $target.Prefix + $_ })) }
+                else { foreach ($line in $lines) { $target.Writer.WriteLine($line) } }
             }
             else { [TaskLog]::Error($ctx, $result.Error) }
         }
@@ -654,6 +673,7 @@ class TaskEngine {
             CallCounts      = [hashtable]::new([StringComparer]::Ordinal)
             Lock            = [object]::new()
             OutputLock      = [object]::new()
+            Prefixes        = [TaskPrefix]::NewState()
             EnvGate         = [TaskEnv]::NewGate()
             Semaphore       = if ([int]$options.Concurrency -gt 0) { [System.Threading.SemaphoreSlim]::new([int]$options.Concurrency) } else { $null }
             Cancel          = [System.Threading.CancellationTokenSource]::new()

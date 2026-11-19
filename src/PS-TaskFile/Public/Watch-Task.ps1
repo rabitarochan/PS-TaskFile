@@ -32,7 +32,7 @@ function Watch-Task {
     .PARAMETER Output
         Output style: interleaved (default), group or prefixed.
     .PARAMETER NoColor
-        Disables colored engine messages.
+        Disables the colors of the engine messages and of the task prefixes.
     .PARAMETER PassThru
         Emits the output of the tasks on the pipeline and streams instead of the host.
     .EXAMPLE
