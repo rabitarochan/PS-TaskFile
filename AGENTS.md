@@ -12,6 +12,11 @@ run", "What is supported").
 The reference for behaviour is go-task itself. Where PowerShell forces a difference, the
 difference is deliberate and written down in `README.md`.
 
+That holds for what a Taskfile *means*: its syntax, variables, the order of execution, exit
+codes and error messages. How output is presented to people - colors, the layout of the
+`prefixed` style - is PS-TaskFile's own and does not have to look like go-task. Such
+differences are written down in `README.md` as well.
+
 ## Commands
 
 ```powershell
@@ -53,7 +58,7 @@ src/PS-TaskFile/
     Dotenv.ps1         TaskDotenv
     Fingerprint.ps1    TaskGlob, TaskFingerprint (checksum / timestamp state under .task/)
     Runner.ps1         TaskEnv (environment gate), TaskScript (runs PowerShell source)
-    Output.ps1         TaskLog (engine messages, host vs. sink)
+    Output.ps1         TaskLog (engine messages, host vs. sink), TaskPrefix / TaskLineWriter (prefixed style)
     Compiler.ps1       TaskCompiler (variable resolution, templating a task for one call)
     Executor.ps1       TaskExecutor (RunTask and friends), TaskEngine (entry point, list/summary/status/watch)
     Host.ps1           functions used by the public commands (engine runspace, result reporting, completion)
@@ -136,6 +141,10 @@ Parallel work (deps, `-Parallel`, watch) runs in *branches*: additional runspace
   sequences or quote the scalar - also in test Taskfiles.
 - Literal `\uXXXX` sequences written through tooling may be decoded; build such strings from
   parts in tests.
+- Color what the engine writes to the host through the host (`Write-Host -ForegroundColor`,
+  `$Host.UI.Write(color, ...)`), never with escape sequences. While a native command runs,
+  the Windows console does not interpret escape sequences, and a line written by another
+  task at that moment shows the sequence as text (`[<ESC>[33mapp<ESC>[0m]`).
 
 ## Tests
 
@@ -146,6 +155,10 @@ Work test-first: add or change a test, watch it fail, then change the code.
   `Invoke-Task -PassThru` and returns `Lines`, `Output`, `Records`, `Error` and `ExitCode`.
 - Host mode (no `-PassThru`) can only be observed from a child process; see
   `Invoke-InChildProcess` in `tests/Invoke-Task.Features.Tests.ps1`. Keep those few: they are slow.
+  The output of that child process is redirected, so what only happens on a terminal (the
+  colors and the wrapping of the `prefixed` style) is tested at unit level (`TaskPrefix`).
+  To see it for real, start `pwsh` with `Start-Process -WindowStyle Hidden` - it gets a
+  console of its own - and read the screen with `$Host.UI.RawUI.GetBufferContents`.
 - When behaviour is supposed to match go-task, add a case to `tests/Compatibility.Tests.ps1`
   (only commands that mean the same in sh and PowerShell: `echo "one argument"`, `exit N`).
 - Avoid timing assertions. For concurrency, make tasks wait for each other through files
