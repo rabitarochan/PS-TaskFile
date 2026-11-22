@@ -339,8 +339,11 @@ Things to know when coming from `task`:
 - `$NAME` in a command is a PowerShell variable - a variable of the Taskfile or one the
   task assigned - not an environment variable as in `sh`. Environment variables are
   `$env:NAME`.
-- `output: prefixed` looks different: `task` writes `[name] text`, PS-TaskFile writes
-  `[name] | text` with aligned prefixes (see "Output" above).
+- `output: prefixed` looks different: `task` writes `[name] text` and colors the name,
+  PS-TaskFile writes `[name] | text` with aligned prefixes and colors the brackets and the
+  bar as well (see "Output" above). Only the presentation differs: what runs, in which order
+  and with which exit code is the same. A script that reads the lines (`-PassThru`, a
+  redirected log) has to expect the bar.
 - Because tasks run inside your PowerShell process, an assembly or binary module that a
   task loads stays loaded (and its files stay locked) until the session ends. Run such
   steps in a child process: `pwsh -NoProfile -Command ...`.
