@@ -234,6 +234,13 @@ class TaskPrefix {
         for ($i = 1; $i -lt $pieces.Length; $i++) { $lines.Add($rest + $pieces[$i]) }
         return $lines.ToArray()
     }
+
+    # The index of the separator in a line that Format returned. Behind the prefix of a first
+    # line and at the start of a continued one there are only blanks before it.
+    static [int] Separator([string] $row, [string] $prefix, [bool] $first) {
+        if ($first) { return $row.IndexOf('|', $prefix.Length + 2) }
+        return $row.IndexOf('|')
+    }
 }
 
 # Writes the output lines of one command in the `prefixed` style. One writer exists per
@@ -265,14 +272,21 @@ class TaskLineWriter {
         }
     }
 
-    # Writes the first line of a row: the prefix in its colour, the rest as it is. The colour
-    # is set through the host like Write-Host does it, not with an escape sequence: while a
-    # native command runs, the Windows console does not interpret escape sequences, and the
-    # sequence itself would show up on the screen.
-    hidden [void] WriteHead([string] $row) {
-        $this.UI.Write('[')
-        $this.UI.Write($this.Tint, $this.Background, $this.Prefix)
-        $this.UI.WriteLine($row.Substring($this.Prefix.Length + 1))
+    # Writes one line that Format returned: the prefix and the separator in the colour of the
+    # task, the rest as it is. The colour is set through the host like Write-Host does it, not
+    # with an escape sequence: while a native command runs, the Windows console does not
+    # interpret escape sequences, and the sequence itself would show up on the screen.
+    hidden [void] WriteColored([string] $row, [bool] $first) {
+        $bar = [TaskPrefix]::Separator($row, $this.Prefix, $first)
+        $start = 0
+        if ($first) {
+            $this.UI.Write('[')
+            $this.UI.Write($this.Tint, $this.Background, $this.Prefix)
+            $start = $this.Prefix.Length + 1
+        }
+        $this.UI.Write($row.Substring($start, $bar - $start))
+        $this.UI.Write($this.Tint, $this.Background, '|')
+        $this.UI.WriteLine($row.Substring($bar + 1))
     }
 
     # The width of the terminal; 0 when the output does not go to one.
@@ -295,12 +309,12 @@ class TaskLineWriter {
     [void] WriteLine([string] $line) {
         [System.Threading.Monitor]::Enter($this.Gate)
         try {
-            $head = $this.Colored
+            $first = $true
             foreach ($row in [TaskPrefix]::Format($this.State, $this.Prefix, $line, $this.Columns())) {
                 if ($null -ne $this.Sink) { $this.Sink.Add([DictionaryEntry]::new('o', $row)) }
-                elseif ($head) { $this.WriteHead($row) }
+                elseif ($this.Colored) { $this.WriteColored($row, $first) }
                 else { $this.UI.WriteLine($row) }
-                $head = $false
+                $first = $false
             }
         }
         finally { [System.Threading.Monitor]::Exit($this.Gate) }

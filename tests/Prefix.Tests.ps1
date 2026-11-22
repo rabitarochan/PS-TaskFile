@@ -27,6 +27,12 @@ BeforeAll {
         } -ArgumentList $Register, $Reserve, $Prefix, $Line, $Columns
     }
 
+    # The position of the separator in a line that Format returned.
+    function Find-TestSeparator {
+        param([string]$Row, [string]$Prefix, [switch]$First)
+        Invoke-InModule { param($r, $p, $f) [TaskPrefix]::Separator($r, $p, $f) } -ArgumentList $Row, $Prefix, $First.IsPresent
+    }
+
     # The colour of $Prefix after the given prefixes were seen.
     function Get-TestColor {
         param([string[]]$Register = @(), [string[]]$Reserve = @(), [string]$Prefix)
@@ -137,6 +143,27 @@ Describe 'TaskPrefix: layout' {
     It 'starts every first line with the prefix in brackets' {
         # TaskLineWriter relies on it to write the prefix in its colour.
         Format-TestLine -Register app, worker -Prefix app -Line ('x' * 60) -Columns 40 | Select-Object -First 1 | Should -BeLike '`[app`]*'
+    }
+
+    # TaskLineWriter writes the separator in the colour of the prefix.
+    It 'finds the separator of a first line' {
+        Find-TestSeparator -Row '[app]    | a | b' -Prefix app -First | Should -Be 9
+        Find-TestSeparator -Row '[app]    |' -Prefix app -First | Should -Be 9
+    }
+
+    It 'finds the separator behind a prefix that contains one' {
+        Find-TestSeparator -Row '[a|b] | x' -Prefix 'a|b' -First | Should -Be 6
+    }
+
+    It 'finds the separator of a continued line' {
+        Find-TestSeparator -Row '         | x | y' -Prefix app | Should -Be 9
+    }
+
+    It 'finds the separator in the lines it formats' {
+        $lines = Format-TestLine -Register 'a|b', worker -Prefix 'a|b' -Line ('x|' * 30) -Columns 40
+        $lines.Count | Should -BeGreaterThan 1
+        Find-TestSeparator -Row $lines[0] -Prefix 'a|b' -First | Should -Be 9
+        foreach ($line in $lines | Select-Object -Skip 1) { Find-TestSeparator -Row $line -Prefix 'a|b' | Should -Be 9 }
     }
 }
 

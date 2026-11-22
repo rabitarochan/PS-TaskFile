@@ -256,8 +256,8 @@ Invoke-Task build -PassThru *> build.log
 The `prefixed` and `group` output styles capture the output as text lines in both modes.
 
 With `output: prefixed` every line starts with the prefix of its task. The prefixes are
-aligned; on a terminal every task has its own color, and a line that is wider than the
-window continues below its own text instead of below the prefix:
+aligned; on a terminal the prefix and the bar have the color of their task, and a line that
+is wider than the window continues below its own text instead of below the prefix:
 
 ```text
 [api]    | listening on http://localhost:5000
