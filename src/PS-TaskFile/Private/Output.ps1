@@ -272,17 +272,17 @@ class TaskLineWriter {
         }
     }
 
-    # Writes one line that Format returned: the prefix and the separator in the colour of the
-    # task, the rest as it is. The colour is set through the host like Write-Host does it, not
-    # with an escape sequence: while a native command runs, the Windows console does not
-    # interpret escape sequences, and the sequence itself would show up on the screen.
+    # Writes one line that Format returned: the prefix with its brackets and the separator in
+    # the colour of the task, the rest as it is. The colour is set through the host like
+    # Write-Host does it, not with an escape sequence: while a native command runs, the Windows
+    # console does not interpret escape sequences, and the sequence itself would show up on
+    # the screen.
     hidden [void] WriteColored([string] $row, [bool] $first) {
         $bar = [TaskPrefix]::Separator($row, $this.Prefix, $first)
         $start = 0
         if ($first) {
-            $this.UI.Write('[')
-            $this.UI.Write($this.Tint, $this.Background, $this.Prefix)
-            $start = $this.Prefix.Length + 1
+            $start = $this.Prefix.Length + 2
+            $this.UI.Write($this.Tint, $this.Background, $row.Substring(0, $start))
         }
         $this.UI.Write($row.Substring($start, $bar - $start))
         $this.UI.Write($this.Tint, $this.Background, '|')
