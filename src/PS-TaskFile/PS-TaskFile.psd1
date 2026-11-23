@@ -1,6 +1,6 @@
 @{
     RootModule           = 'PS-TaskFile.psm1'
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '0.2.0'
     GUID                 = '6f0a3f0e-5c0b-4c58-9a51-2f6a7d3c9b14'
     Author               = 'Kengo Asamizu'
     Copyright            = 'Copyright (c) 2026 Kengo Asamizu. Licensed under the MIT License.'
@@ -24,6 +24,13 @@
             Tags       = @('task', 'taskfile', 'task-runner', 'build', 'automation')
             ProjectUri = 'https://github.com/rabitarochan/PS-TaskFile'
             LicenseUri = 'https://github.com/rabitarochan/PS-TaskFile/blob/main/LICENSE.txt'
+            ReleaseNotes = @'
+0.2.0
+- output: prefixed writes "[name] | text". The prefixes are aligned, a line that is wider
+  than the terminal continues below its own text, and on a terminal every task has its
+  own color. Scripts that read these lines have to expect the bar.
+- The mapping form of an output style other than group is rejected, as task does.
+'@
         }
     }
 }
