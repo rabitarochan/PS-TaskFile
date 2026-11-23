@@ -44,6 +44,11 @@ Requirements: PowerShell 7.4+, Pester 5.5+, the `powershell-yaml` module. If the
 binary is installed, `tests/Compatibility.Tests.ps1` compares against it; otherwise it is
 skipped. PSScriptAnalyzer is optional (`Invoke-Task lint`).
 
+CI runs the suite on `windows-latest` and installs one fixed go-task release for the
+compatibility tests (`TASK_VERSION` and its checksum in `.github/workflows/ci.yml`). Raise it
+when the tests are brought in line with a newer `task`. On GitHub Actions `task` adds
+`::error` lines to its output; the compatibility tests hide `GITHUB_ACTIONS` from it.
+
 ## Layout
 
 ```
@@ -64,6 +69,8 @@ src/PS-TaskFile/
     Host.ps1           functions used by the public commands (engine runspace, result reporting, completion)
 tests/                 Pester tests; Helpers.ps1 is dot-sourced by every file
 tools/Invoke-Tests.ps1 test runner
+tools/Publish-Module.ps1  checks a release tag and publishes (used by the release workflow)
+.github/workflows/     ci.yml (tests on push / pull request), release.yml (tag vX.Y.Z -> gallery)
 Taskfile.yml           development tasks, run by the module itself
 ```
 
@@ -171,10 +178,19 @@ The module is published to the PowerShell Gallery from `src/PS-TaskFile`; the re
 `https://github.com/rabitarochan/PS-TaskFile`. Releases are made by the maintainer: do not
 publish, tag or push without being asked.
 
-1. Raise `ModuleVersion` in `src/PS-TaskFile/PS-TaskFile.psd1`. All tests must pass.
-2. `Publish-PSResource -Path src/PS-TaskFile -Repository PSGallery -ApiKey <key>`. A published
-   version cannot be removed or replaced, only hidden.
-3. Tag the released commit `vX.Y.Z` and push the tag.
+1. Raise `ModuleVersion` in `src/PS-TaskFile/PS-TaskFile.psd1` and replace its `ReleaseNotes`.
+   Commit and push; CI must be green.
+2. Tag that commit `vX.Y.Z` and push the tag. The release workflow
+   (`.github/workflows/release.yml`) checks the tag with `tools/Publish-Module.ps1`, runs the
+   tests and then waits for the approval of the `psgallery` environment before it publishes.
+   A published version cannot be removed or replaced, only hidden.
+
+When the workflow fails before it published, fix the cause and run it again, or delete the tag
+and release the next patch version. Never move the tag of a published version.
+
+The API key is the secret `PSGALLERY_API_KEY` of the `psgallery` environment. It is scoped to
+new versions of this package and expires; the maintainer renews it. To publish by hand:
+`tools/Publish-Module.ps1 -Tag vX.Y.Z -Publish -ApiKey <key>` on the pushed commit, then tag.
 
 `LICENSE.txt` exists twice, in the root (for GitHub) and in `src/PS-TaskFile` (the package
 must contain it). The two copies have to stay identical; a test checks that.

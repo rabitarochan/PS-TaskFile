@@ -1,0 +1,53 @@
+name: Release
+
+# Pushing a tag vX.Y.Z publishes that commit to the PowerShell Gallery. A published version
+# cannot be removed or replaced, so every step before the last one is a check.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Fails within a minute when the tag and the module version do not belong together.
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the release
+        shell: pwsh
+        run: ./tools/Publish-Module.ps1 -Tag $env:GITHUB_REF_NAME
+
+  test:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 10
+    # The environment holds the API key and asks its reviewers for approval before the job starts.
+    environment: psgallery
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Publish-PSResource validates the manifest, and the manifest requires this module.
+      - name: Install powershell-yaml
+        shell: pwsh
+        run: Install-PSResource -Name powershell-yaml -Repository PSGallery -TrustRepository
+      - name: Publish to the PowerShell Gallery
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: ./tools/Publish-Module.ps1 -Tag $env:GITHUB_REF_NAME -Publish
