@@ -216,9 +216,13 @@ tasks:
     function Invoke-GoTask {
         param([string[]]$Arguments)
         $errorFile = Join-Path $TestDrive 'go-task-stderr.txt'
+        # On GitHub Actions go-task adds "::error title=..." lines for the run summary of the
+        # workflow. PS-TaskFile does not write them, so go-task must not think it runs there.
+        $actions = $env:GITHUB_ACTIONS
+        $env:GITHUB_ACTIONS = $null
         $env:NO_COLOR = '1'
         try { $stdout = @(& task --dir $script:Root @Arguments 2> $errorFile) }
-        finally { Remove-Item Env:NO_COLOR }
+        finally { Remove-Item Env:NO_COLOR; $env:GITHUB_ACTIONS = $actions }
         $exitCode = $LASTEXITCODE
         $stderr = @(Get-Content $errorFile -ErrorAction Ignore)
         [pscustomobject]@{ Output = @($stdout | ForEach-Object { "$_" }); Messages = $stderr; ExitCode = $exitCode }
