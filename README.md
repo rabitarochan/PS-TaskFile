@@ -331,6 +331,7 @@ Not supported:
 - `--interactive` (prompting for missing required variables).
 - `shopt`, and `set` options other than `errexit`, `pipefail`, `nounset` and `xtrace`.
 - YAML timestamps stay strings (`2024-01-02` is not converted to a date).
+- The `::error` annotations that `task` adds to its output on GitHub Actions.
 
 Things to know when coming from `task`:
 
@@ -369,6 +370,9 @@ Invoke-Task test:Template
 The tests need Pester 5.5 or later. When the `task` binary is on the `PATH`,
 `tests/Compatibility.Tests.ps1` also runs the same Taskfile through it and compares output,
 messages and exit codes; without it those tests are skipped.
+
+GitHub Actions runs the tests, including the comparison with `task`, on every push to `main`
+and on every pull request (`.github/workflows/ci.yml`).
 
 `AGENTS.md` describes the architecture and the conventions of the code base.
 

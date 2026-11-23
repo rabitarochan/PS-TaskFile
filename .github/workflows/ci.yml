@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The release workflow runs the same tests before it publishes.
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  # The go-task release the compatibility tests compare against, and the SHA-256 of its
+  # task_windows_amd64.zip (from task_checksums.txt of that release). Change both together.
+  TASK_VERSION: 3.53.1
+  TASK_SHA256: 27c0cd248c12cba03d8958d954a3df981c900be885ec9ce5f6a3cdc4e9a19316
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Pester and powershell-yaml
+        shell: pwsh
+        run: Install-PSResource -Name Pester, powershell-yaml -Repository PSGallery -TrustRepository
+
+      - name: Install task for the compatibility tests
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $zip = Join-Path $env:RUNNER_TEMP 'task.zip'
+          Invoke-WebRequest "https://github.com/go-task/task/releases/download/v$env:TASK_VERSION/task_windows_amd64.zip" -OutFile $zip
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          if ($hash -ne $env:TASK_SHA256) { throw "task.zip has the checksum $hash, not the expected one." }
+          $directory = Join-Path $env:RUNNER_TEMP 'task'
+          Expand-Archive -LiteralPath $zip -DestinationPath $directory
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $directory
+
+      - name: Test
+        shell: pwsh
+        run: |
+          task --version
+          pwsh -NoProfile -File tools/Invoke-Tests.ps1

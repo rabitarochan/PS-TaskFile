@@ -1,4 +1,6 @@
-* text=auto
+# LF in every checkout: the tests and the published package get the same bytes on every
+# machine, also where git would convert to CRLF (the default on Windows, e.g. on the CI runners).
+* text=auto eol=lf
 *.ps1 text
 *.psm1 text
 *.psd1 text
